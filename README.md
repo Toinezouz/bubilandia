@@ -37,7 +37,7 @@ tests/        Vitest
 Le workflow `.github/workflows/deploy.yml` teste, construit et publie à chaque push sur `main`.
 
 **Une seule fois**, sur GitHub : *Settings → Pages → Build and deployment → Source : « GitHub Actions »*.
-L'app est alors servie sur `https://<utilisateur>.github.io/<dépôt>/`.
+L'app est servie sur **https://toinezouz.github.io/bubilandia/**.
 
 ### Publier une mise à jour
 

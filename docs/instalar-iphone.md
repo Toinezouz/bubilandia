@@ -1,12 +1,12 @@
 # Cómo instalar Bubilandia en tu iPhone
 
-*(Mensaje para enviar tal cual. Sustituye el enlace por la URL publicada.)*
+*(Mensaje para enviar tal cual.)*
 
 ---
 
 ¡Hola! Ya tienes tu app de entreno 💪 Se instala en 1 minuto:
 
-1. Abre este enlace **en Safari** (no en Chrome ni dentro de WhatsApp): 👉 **URL_DE_LA_APP**
+1. Abre este enlace **en Safari** (no en Chrome ni dentro de WhatsApp): 👉 **https://toinezouz.github.io/bubilandia/**
    *(Si lo abres desde WhatsApp, toca los tres puntos o «Abrir en Safari».)*
 2. Toca el botón **Compartir** (el cuadrado con la flecha hacia arriba, abajo en el centro).
 3. Desliza y toca **«Añadir a pantalla de inicio»** (si no lo ves, está en «Más»). Luego toca **«Añadir»**.
