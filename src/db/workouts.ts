@@ -4,7 +4,9 @@
  */
 
 import {
+  DELOAD_SESSIONS,
   adjustRest,
+  deloadSets,
   lightSessionWeight,
   prefillForSet,
   suggestNext,
@@ -96,14 +98,24 @@ const ALL_TABLES = (db: AppDatabase) => [
   db.settings,
 ];
 
-/** Creates the workout with every exercise and its pre-filled sets. Returns its id. */
-export async function startWorkout(db: AppDatabase, templateId: string, now: number): Promise<string> {
+export interface StartOptions {
+  /** Return after a break (§7.6): loads −10 % on this session. */
+  reduceLoads?: boolean;
+}
+
+/**
+ * Creates the workout with every exercise and its pre-filled sets. Returns its id.
+ * During a deload week the session is marked isDeload: one set less per exercise, loads −10 %.
+ */
+export async function startWorkout(db: AppDatabase, templateId: string, now: number, options: StartOptions = {}): Promise<string> {
   return db.transaction('rw', ALL_TABLES(db), async () => {
     if (await getActiveWorkout(db)) throw new Error('A workout is already in progress');
     const template = await db.sessionTemplates.get(templateId);
     if (!template) throw new Error(`Unknown template ${templateId}`);
     const settings = await db.settings.get(SETTINGS_ID);
     const targetRPE = settings?.targetRPE ?? 8;
+    const deload = (settings?.deloadRemaining ?? 0) > 0;
+    const lighter = deload || options.reduceLoads === true;
 
     const workout: Workout = {
       id: newId(),
@@ -112,7 +124,7 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
       endedAt: null,
       readiness: null,
       notes: '',
-      isDeload: false,
+      isDeload: deload,
       status: 'in_progress',
       activeRest: null,
     };
@@ -136,7 +148,8 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
       await db.performedExercises.add(pe);
       const withWarmup = warmupPending && exercise.isCompound;
       if (withWarmup) warmupPending = false;
-      await db.sets.bulkAdd(buildSets(pe.id, exercise, suggestion, item.baseSets, withWarmup, false));
+      const sets = deload ? deloadSets(item.baseSets) : item.baseSets;
+      await db.sets.bulkAdd(buildSets(pe.id, exercise, suggestion, sets, withWarmup, lighter));
     }
     return workout.id;
   });
@@ -356,7 +369,12 @@ export async function setExerciseNote(db: AppDatabase, performedExerciseId: stri
 
 /** Ends the workout; sets never marked "Hecho" are dropped so they never count anywhere. */
 export async function finishWorkout(db: AppDatabase, workoutId: string, now: number, notes?: string): Promise<void> {
-  await db.transaction('rw', [db.workouts, db.performedExercises, db.sets], async () => {
+  await db.transaction('rw', [db.workouts, db.performedExercises, db.sets, db.settings], async () => {
+    const workout = await db.workouts.get(workoutId);
+    if (workout?.isDeload && workout.status === 'in_progress') {
+      const settings = await db.settings.get(SETTINGS_ID);
+      await db.settings.update(SETTINGS_ID, { deloadRemaining: Math.max(0, (settings?.deloadRemaining ?? 0) - 1) });
+    }
     const peIds = await db.performedExercises.where('workoutId').equals(workoutId).primaryKeys();
     await db.sets.where('performedExerciseId').anyOf(peIds).filter((s) => s.completedAt === null).delete();
     await db.workouts.update(workoutId, {
@@ -382,6 +400,29 @@ export async function adjustActiveRest(db: AppDatabase, workoutId: string, delta
     const rest = (await db.workouts.get(workoutId))?.activeRest;
     if (rest) await db.workouts.update(workoutId, { activeRest: adjustRest(rest, deltaSeconds, now) });
   });
+}
+
+/** Deletes a past session and everything in it (history correction, §6.4). */
+export async function deleteWorkout(db: AppDatabase, workoutId: string): Promise<void> {
+  await db.transaction('rw', [db.workouts, db.performedExercises, db.sets], async () => {
+    const peIds = await db.performedExercises.where('workoutId').equals(workoutId).primaryKeys();
+    await db.sets.where('performedExerciseId').anyOf(peIds).delete();
+    await db.performedExercises.bulkDelete(peIds);
+    await db.workouts.delete(workoutId);
+  });
+}
+
+/** Deload week accepted (§7.6): the next 4 sessions are deload sessions. */
+export async function startDeload(db: AppDatabase): Promise<void> {
+  await db.settings.update(SETTINGS_ID, { deloadRemaining: DELOAD_SESSIONS, deloadSnoozedAt: null });
+}
+
+export async function snoozeDeload(db: AppDatabase, now: number): Promise<void> {
+  await db.settings.update(SETTINGS_ID, { deloadSnoozedAt: now });
+}
+
+export async function endDeload(db: AppDatabase): Promise<void> {
+  await db.settings.update(SETTINGS_ID, { deloadRemaining: 0 });
 }
 
 export async function abandonWorkout(db: AppDatabase, workoutId: string, now: number): Promise<void> {

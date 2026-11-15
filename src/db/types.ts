@@ -166,6 +166,10 @@ export interface Settings {
   lastExportAt: number | null;
   /** "Haz una copia de seguridad" banner closed at (snoozes it for 14 days). */
   backupReminderDismissedAt?: number | null;
+  /** Deload week in progress: sessions left (§7.6). 0 / absent = none. */
+  deloadRemaining?: number;
+  /** "Ahora no" on the deload proposal (asked again a week later). */
+  deloadSnoozedAt?: number | null;
   /** Version of the seeded program, to allow future program updates. */
   seedVersion: number;
 }

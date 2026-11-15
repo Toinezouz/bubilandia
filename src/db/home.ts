@@ -1,6 +1,13 @@
 /** Read model for the home screen (§6.1). */
 
-import { nextTemplateId, setsPerMuscle, shouldRemindBackup, type VolumeEntry } from '../engine/index.ts';
+import {
+  deloadRecommendation,
+  nextTemplateId,
+  setsPerMuscle,
+  shouldRemindBackup,
+  type DeloadReason,
+  type VolumeEntry,
+} from '../engine/index.ts';
 import type { AppDatabase } from './database.ts';
 import { SETTINGS_ID, type Muscle, type SessionTemplate, type Settings, type Workout } from './types.ts';
 
@@ -14,6 +21,14 @@ export interface HomeData {
   /** End of the last completed leg session, for the < 48 h warning. */
   lastLegSessionAt: number | null;
   activeWorkout: Workout | null;
+  /** Start time of every completed session (return-after-break check). */
+  sessionStarts: number[];
+  /** Start of the last completed session per template. */
+  lastStartByTemplate: Record<string, number>;
+  /** Deload sessions left (0 = no deload week in progress). */
+  deloadRemaining: number;
+  /** Why a deload week is proposed now, null if it is not. */
+  deloadProposal: DeloadReason | null;
   /** Show the "Haz una copia de seguridad" banner. */
   backupReminder: boolean;
   settings: Settings | undefined;
@@ -60,8 +75,21 @@ export async function loadHomeData(db: AppDatabase, now: number): Promise<HomeDa
     return e ? [{ primaryMuscle: e.primaryMuscle, secondaryMuscle: e.secondaryMuscle, sets: setCount.get(p.id) ?? 0 }] : [];
   });
 
+  const lastStartByTemplate: Record<string, number> = {};
+  for (const w of done) lastStartByTemplate[w.templateId] = Math.max(lastStartByTemplate[w.templateId] ?? 0, w.startedAt);
+  const deloadRemaining = settings?.deloadRemaining ?? 0;
+
   return {
     templates,
+    sessionStarts: done.map((w) => w.startedAt),
+    lastStartByTemplate,
+    deloadRemaining,
+    deloadProposal: deloadRecommendation({
+      sessions: done.map((w) => ({ at: w.startedAt, readiness: w.readiness, isDeload: w.isDeload })),
+      now,
+      deloadInProgress: deloadRemaining > 0,
+      snoozedAt: settings?.deloadSnoozedAt ?? null,
+    }),
     nextTemplateId: nextTemplateId(templates, lastDone?.templateId ?? null),
     lastDoneAt,
     lastLegSessionAt: legTimes.length ? Math.max(...legTimes) : null,

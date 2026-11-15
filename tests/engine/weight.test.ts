@@ -40,6 +40,35 @@ describe('roundToIncrement', () => {
   });
 });
 
+describe('extra increments (program editing)', () => {
+  it.each([
+    // [kg, increment, expected]
+    [41.3, 0.5, 41.5],
+    [41.25, 0.5, 41], // half → down
+    [20.1, 0.25, 20],
+    [20.13, 0.25, 20.25],
+    [20.2, 1.5, 19.5],
+    [21, 1.5, 21],
+    [43, 3, 42],
+    [45, 3, 45],
+    [41, 4, 40],
+    [42, 4, 40], // half → down
+    [41, 7.5, 37.5],
+    [42, 7.5, 45],
+    [64.9, 10, 60],
+    [65.1, 10, 70],
+  ])('%f kg with %f kg steps → %f', (kg, increment, expected) => {
+    expect(roundToIncrement(kg, increment)).toBe(expected);
+  });
+
+  it('adds and removes exact multiples', () => {
+    expect(addIncrements(20, 0.25, 3)).toBe(20.75);
+    expect(addIncrements(40, 7.5, 2)).toBe(55);
+    expect(reduceByFraction(40, 0.5, 0.05)).toBe(38);
+    expect(reduceByFraction(30, 1.5, 0.05)).toBe(28.5);
+  });
+});
+
 describe('addIncrements', () => {
   it('adds exact multiples without float drift', () => {
     expect(addIncrements(41.25, 1.25, 1)).toBe(42.5);

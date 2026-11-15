@@ -230,3 +230,46 @@
   font-weight: 700;
   padding: 0 16px;
 }
+.deload {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.deload > span {
+  display: grid;
+}
+.deloadProposal {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.deloadActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.deloadActions button {
+  min-height: 48px;
+}
+.secondarySmall {
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.linkSmall {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: underline;
+  font-size: 15px;
+}

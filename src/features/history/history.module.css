@@ -122,3 +122,183 @@
   color: var(--text-muted);
   font-size: 14px;
 }
+
+/* ── Phase 3: tabs, progress ── */
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.tab {
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.tab[aria-selected='true'] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px 14px 14px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.cardTitle {
+  margin: 0;
+  font-size: 16px;
+}
+.advice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+.recordMain {
+  margin: 0;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.table td {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.sessionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sessionList li {
+  display: grid;
+  gap: 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.muscleChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 15px;
+}
+.muscleChipOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+.chipCount {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.below {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.within {
+  background: color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.above {
+  background: color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.setButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  font-size: 16px;
+}
+.setButton:active {
+  background: var(--surface-2);
+}
+.noteLabel {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.noteField {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px;
+  resize: vertical;
+}
+.deleteSession {
+  min-height: 48px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger);
+  font-weight: 600;
+}
+.editBody {
+  display: grid;
+  gap: 12px;
+}
+.rpeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.rpeChoice {
+  min-height: 48px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 700;
+  font-size: 17px;
+}
+.rpeChoiceOn {
+  border-color: var(--accent);
+}

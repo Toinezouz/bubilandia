@@ -1,0 +1,86 @@
+/**
+ * Program editing (§6.6). Pure list helpers (testable without a database) + small DB writes.
+ * Template items always keep a contiguous `order` 0..n-1.
+ */
+
+import type { AppDatabase } from './database.ts';
+import type { Exercise, TemplateItem } from './types.ts';
+
+const renumber = (items: TemplateItem[]): TemplateItem[] =>
+  [...items].sort((a, b) => a.order - b.order).map((item, order) => ({ ...item, order }));
+
+export function moveItem(items: ReadonlyArray<TemplateItem>, order: number, direction: -1 | 1): TemplateItem[] {
+  const sorted = renumber([...items]);
+  const target = order + direction;
+  if (target < 0 || target >= sorted.length) return sorted;
+  [sorted[order], sorted[target]] = [sorted[target]!, sorted[order]!];
+  return renumber(sorted.map((item, i) => ({ ...item, order: i })));
+}
+
+export function removeItem(items: ReadonlyArray<TemplateItem>, order: number): TemplateItem[] {
+  return renumber(items.filter((i) => i.order !== order));
+}
+
+/** New exercise at the end: 3 × 8-12 with the exercise's own rest (timed: 30-45 s). */
+export function addItem(items: ReadonlyArray<TemplateItem>, exercise: Exercise): TemplateItem[] {
+  const timed = exercise.kind === 'timed';
+  return renumber([
+    ...items,
+    {
+      exerciseId: exercise.id,
+      order: items.length,
+      baseSets: 3,
+      optionalExtraSets: 0,
+      repMin: timed ? 30 : 8,
+      repMax: timed ? 45 : 12,
+      restSeconds: exercise.defaultRestSeconds,
+      targetRPE: null,
+    },
+  ]);
+}
+
+/** Applies a patch to one item, keeping the values sane (min < max, at least 1 set…). */
+export function patchItem(items: ReadonlyArray<TemplateItem>, order: number, patch: Partial<TemplateItem>): TemplateItem[] {
+  return renumber(
+    items.map((item) => {
+      if (item.order !== order) return item;
+      const next = { ...item, ...patch, order: item.order };
+      next.baseSets = Math.min(8, Math.max(1, Math.round(next.baseSets)));
+      next.repMin = Math.max(1, Math.round(next.repMin));
+      next.repMax = Math.max(next.repMin + 1, Math.round(next.repMax));
+      next.restSeconds = Math.min(600, Math.max(0, Math.round(next.restSeconds)));
+      return next;
+    }),
+  );
+}
+
+async function updateItems(db: AppDatabase, templateId: string, change: (items: TemplateItem[]) => TemplateItem[]): Promise<void> {
+  await db.transaction('rw', db.sessionTemplates, async () => {
+    const template = await db.sessionTemplates.get(templateId);
+    if (!template) throw new Error(`Unknown template ${templateId}`);
+    await db.sessionTemplates.update(templateId, { items: change(template.items) });
+  });
+}
+
+export const updateTemplateItem = (db: AppDatabase, templateId: string, order: number, patch: Partial<TemplateItem>) =>
+  updateItems(db, templateId, (items) => patchItem(items, order, patch));
+
+export const moveTemplateItem = (db: AppDatabase, templateId: string, order: number, direction: -1 | 1) =>
+  updateItems(db, templateId, (items) => moveItem(items, order, direction));
+
+export const removeTemplateItem = (db: AppDatabase, templateId: string, order: number) =>
+  updateItems(db, templateId, (items) => removeItem(items, order));
+
+export async function addTemplateItem(db: AppDatabase, templateId: string, exerciseId: string): Promise<void> {
+  const exercise = await db.exercises.get(exerciseId);
+  if (!exercise) throw new Error(`Unknown exercise ${exerciseId}`);
+  await updateItems(db, templateId, (items) => addItem(items, exercise));
+}
+
+/** The load step belongs to the exercise: it applies in every session using it. */
+export async function updateExerciseIncrement(db: AppDatabase, exerciseId: string, increment: number): Promise<void> {
+  // The engine works in hundredths of kg: keep at most two decimals.
+  const step = Math.round(increment * 100) / 100;
+  if (!(step > 0)) return;
+  await db.exercises.update(exerciseId, { increment: step });
+}

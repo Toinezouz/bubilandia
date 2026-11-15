@@ -141,10 +141,11 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
         <div className={styles.topTitle}>
           <span className={styles.topCode}>{view.template?.code}</span>
           <h1>{view.template?.name ?? 'Sesión'}</h1>
-          {form?.readiness && (
+          {(form?.readiness || view.workout.isDeload) && (
             <span className={styles.form}>
-              Forma: {READINESS_LABELS[form.readiness]}
-              {view.workout.lightSession ? ' · ligera' : ''}
+              {form?.readiness && `Forma: ${READINESS_LABELS[form.readiness]}`}
+              {form?.readiness && (view.workout.isDeload || view.workout.lightSession) && ' · '}
+              {view.workout.isDeload ? 'descarga' : view.workout.lightSession ? 'ligera' : ''}
             </span>
           )}
         </div>
@@ -172,7 +173,7 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
               onEditRpe={(set) => setPending({ kind: 'rpe', set, editing: true })}
               onRemoveSet={(set) => setPending({ kind: 'remove', set })}
               readiness={form?.readiness ?? null}
-              lightSession={view.workout.lightSession === true}
+              lightSession={view.workout.lightSession === true || view.workout.isDeload}
             />
           );
         })}
@@ -204,7 +205,7 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
           shouldOfferLightSession({
             exercisesMeasured: form.exercisesMeasured,
             readiness: form.readiness,
-            alreadyOffered: view.workout.lightSessionOffered === true,
+            alreadyOffered: view.workout.lightSessionOffered === true || view.workout.isDeload,
           })
         }
         onClose={() => void answerLightSession(db, workoutId, false)}

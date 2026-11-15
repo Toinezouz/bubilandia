@@ -4,9 +4,11 @@ import type { HomeData } from './db/home.ts';
 import { requestPersistentStorage } from './db/persist.ts';
 import type { SessionTemplate } from './db/types.ts';
 import { abandonWorkout, getActiveWorkout, startWorkout } from './db/workouts.ts';
-import { legDayWarning } from './engine/index.ts';
+import { daysSince, legDayWarning, returnFromBreak } from './engine/index.ts';
 import { HomeScreen } from './features/home/HomeScreen.tsx';
-import { HistoryScreen } from './features/history/HistoryScreen.tsx';
+import { ExerciseProgressScreen } from './features/history/ExerciseProgressScreen.tsx';
+import { HistoryScreen, type HistoryTab } from './features/history/HistoryScreen.tsx';
+import { ProgramScreen } from './features/settings/ProgramScreen.tsx';
 import { SettingsScreen } from './features/settings/SettingsScreen.tsx';
 import { WorkoutDetailScreen } from './features/history/WorkoutDetailScreen.tsx';
 import { SummaryScreen } from './features/workout/SummaryScreen.tsx';
@@ -42,14 +44,17 @@ type Screen =
   | { name: 'home' }
   | { name: 'workout'; workoutId: string }
   | { name: 'summary'; workoutId: string }
-  | { name: 'history' }
+  | { name: 'history'; tab: HistoryTab }
+  | { name: 'exerciseProgress'; exerciseId: string; tab: HistoryTab }
   | { name: 'settings' }
-  | { name: 'historyDetail'; workoutId: string };
+  | { name: 'program'; templateId: string }
+  | { name: 'historyDetail'; workoutId: string; tab: HistoryTab };
 
 /** Confirmation needed before starting a session. */
 type StartCheck =
   | { kind: 'active'; template: SessionTemplate; activeId: string }
-  | { kind: 'legs'; template: SessionTemplate; message: string }
+  | { kind: 'legs'; template: SessionTemplate; message: string; data: HomeData }
+  | { kind: 'break'; template: SessionTemplate; days: number }
   | null;
 
 export function App() {
@@ -67,10 +72,20 @@ export function App() {
     })().catch((error: unknown) => setScreen({ name: 'error', message: String(error) }));
   }, []);
 
-  const begin = async (template: SessionTemplate) => {
+  const begin = async (template: SessionTemplate, reduceLoads = false) => {
     setCheck(null);
-    const workoutId = await startWorkout(db, template.id, Date.now());
+    const workoutId = await startWorkout(db, template.id, Date.now(), { reduceLoads });
     setScreen({ name: 'workout', workoutId });
+  };
+
+  /** Last check before starting (§7.6): back after 10+ days → offer −10 % on this session type. */
+  const checkBreakThenBegin = (template: SessionTemplate, data: HomeData) => {
+    const now = Date.now();
+    if (data.deloadRemaining === 0 && returnFromBreak(data.sessionStarts, data.lastStartByTemplate[template.id] ?? null, now)) {
+      setCheck({ kind: 'break', template, days: daysSince(Math.max(...data.sessionStarts), now) });
+      return;
+    }
+    void begin(template);
   };
 
   const requestStart = (template: SessionTemplate, data: HomeData) => {
@@ -81,10 +96,10 @@ export function App() {
     }
     const warning = legDayWarning(template.isLegDay, data.lastLegSessionAt, Date.now());
     if (warning) {
-      setCheck({ kind: 'legs', template, message: warning });
+      setCheck({ kind: 'legs', template, message: warning, data });
       return;
     }
-    void begin(template);
+    checkBreakThenBegin(template, data);
   };
 
   if (installHelp) {
@@ -129,19 +144,28 @@ export function App() {
       )}
       {screen.name === 'history' && (
         <HistoryScreen
+          tab={screen.tab}
+          onTab={(tab) => setScreen({ name: 'history', tab })}
           onBack={() => setScreen({ name: 'home' })}
-          onOpen={(workoutId) => setScreen({ name: 'historyDetail', workoutId })}
+          onOpen={(workoutId) => setScreen({ name: 'historyDetail', workoutId, tab: screen.tab })}
+          onOpenExercise={(exerciseId) => setScreen({ name: 'exerciseProgress', exerciseId, tab: screen.tab })}
         />
       )}
       {screen.name === 'historyDetail' && (
-        <WorkoutDetailScreen workoutId={screen.workoutId} onBack={() => setScreen({ name: 'history' })} />
+        <WorkoutDetailScreen workoutId={screen.workoutId} onBack={() => setScreen({ name: 'history', tab: screen.tab })} />
       )}
-      {screen.name === 'settings' && <SettingsScreen onBack={() => setScreen({ name: 'home' })} />}
+      {screen.name === 'exerciseProgress' && (
+        <ExerciseProgressScreen exerciseId={screen.exerciseId} onBack={() => setScreen({ name: 'history', tab: screen.tab })} />
+      )}
+      {screen.name === 'settings' && (
+        <SettingsScreen onBack={() => setScreen({ name: 'home' })} onOpenProgram={(templateId) => setScreen({ name: 'program', templateId })} />
+      )}
+      {screen.name === 'program' && <ProgramScreen templateId={screen.templateId} onBack={() => setScreen({ name: 'settings' })} />}
       {screen.name === 'home' && (
         <HomeScreen
           onStart={requestStart}
           onResume={(workoutId) => setScreen({ name: 'workout', workoutId })}
-          onHistory={() => setScreen({ name: 'history' })}
+          onHistory={() => setScreen({ name: 'history', tab: 'sessions' })}
           onSettings={() => setScreen({ name: 'settings' })}
         />
       )}
@@ -151,9 +175,27 @@ export function App() {
         title="¿Piernas otra vez?"
         message={check?.kind === 'legs' ? check.message : undefined}
         confirmLabel="Empezar igualmente"
-        onConfirm={() => check && void begin(check.template)}
+        onConfirm={() => check?.kind === 'legs' && checkBreakThenBegin(check.template, check.data)}
         onCancel={() => setCheck(null)}
       />
+
+      <Sheet open={check?.kind === 'break'} onClose={() => setCheck(null)} title="¡Bienvenida de vuelta!">
+        {check?.kind === 'break' && (
+          <>
+            <p className={ui.sheetText}>
+              Llevabas {check.days} días sin entrenar. ¿Bajamos un 10 % las cargas de hoy para retomar con calma?
+            </p>
+            <div className={ui.sheetActions}>
+              <button type="button" className={ui.primaryButton} onClick={() => void begin(check.template, true)}>
+                Sí, −10 % hoy
+              </button>
+              <button type="button" className={ui.secondaryButton} onClick={() => void begin(check.template, false)}>
+                No, cargas normales
+              </button>
+            </div>
+          </>
+        )}
+      </Sheet>
 
       <Sheet open={check?.kind === 'active'} onClose={() => setCheck(null)} title="Ya tienes una sesión en curso">
         {check?.kind === 'active' && (

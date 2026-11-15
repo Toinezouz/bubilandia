@@ -11,6 +11,7 @@ import styles from './settings.module.css';
 
 interface SettingsScreenProps {
   onBack: () => void;
+  onOpenProgram: (templateId: string) => void;
 }
 
 type ExportState =
@@ -29,8 +30,9 @@ type ImportState =
 
 const sessions = (n: number) => `${n} ${n === 1 ? 'sesión' : 'sesiones'}`;
 
-export function SettingsScreen({ onBack }: SettingsScreenProps) {
+export function SettingsScreen({ onBack, onOpenProgram }: SettingsScreenProps) {
   const settings = useLiveQuery(() => db.settings.get(SETTINGS_ID), []);
+  const templates = useLiveQuery(() => db.sessionTemplates.orderBy('order').toArray(), []);
   const [exportState, setExportState] = useState<ExportState>({ kind: 'idle' });
   const [importState, setImportState] = useState<ImportState>({ kind: 'idle' });
   const fileInput = useRef<HTMLInputElement>(null);
@@ -95,6 +97,35 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         </button>
         <h1 className={styles.title}>Ajustes</h1>
       </header>
+
+      <section className={styles.section} aria-labelledby="program-title">
+        <h2 id="program-title">Programa</h2>
+        <p className={styles.text}>Series, repeticiones, descansos, incrementos y ejercicios de cada sesión.</p>
+        {templates?.map((t) => (
+          <button key={t.id} type="button" className={styles.templateRow} onClick={() => onOpenProgram(t.id)}>
+            <strong>{t.code}</strong>
+            {t.name}
+            <span>{t.items.length} ejercicios ›</span>
+          </button>
+        ))}
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>RPE objetivo (reps en reserva = 10 − RPE)</span>
+          <div className={styles.choiceRow} role="radiogroup" aria-label="RPE objetivo">
+            {[7, 7.5, 8, 8.5, 9].map((rpe) => (
+              <button
+                key={rpe}
+                type="button"
+                role="radio"
+                aria-checked={(settings?.targetRPE ?? 8) === rpe}
+                className={`${styles.choice} ${(settings?.targetRPE ?? 8) === rpe ? styles.choiceOn : ''}`}
+                onClick={() => void db.settings.update(SETTINGS_ID, { targetRPE: rpe })}
+              >
+                {String(rpe).replace('.', ',')}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <section className={styles.section} aria-labelledby="workout-title">
         <h2 id="workout-title">Entreno</h2>

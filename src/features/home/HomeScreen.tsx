@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database.ts';
 import { loadHomeData, type HomeData } from '../../db/home.ts';
+import { endDeload, snoozeDeload, startDeload } from '../../db/workouts.ts';
 import { MUSCLES, MUSCLE_LABELS, SETTINGS_ID, type SessionTemplate } from '../../db/types.ts';
 import { formatDaysAgo, volumeStatus } from '../../engine/index.ts';
 import { formatNumber } from '../../shared/format.ts';
@@ -76,6 +77,40 @@ export function HomeScreen({ onStart, onResume, onHistory, onSettings }: HomeScr
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {data.deloadRemaining > 0 && (
+        <div className={styles.deload} role="status">
+          <span>
+            <strong>Semana de descarga</strong>
+            <span className={styles.resumeSub}>
+              {data.deloadRemaining === 1 ? 'Queda 1 sesión' : `Quedan ${data.deloadRemaining} sesiones`}: una serie menos y −10 % de carga.
+            </span>
+          </span>
+          <button type="button" className={styles.linkSmall} onClick={() => void endDeload(db)}>
+            Terminar
+          </button>
+        </div>
+      )}
+
+      {data.deloadProposal && (
+        <div className={styles.deloadProposal} role="status">
+          <strong>¿Hacemos una semana de descarga?</strong>
+          <span className={styles.resumeSub}>
+            {data.deloadProposal === 'duration'
+              ? 'Llevas 6 semanas o más entrenando seguidas.'
+              : 'Tu forma ha sido baja en varias sesiones de las últimas 2 semanas.'}{' '}
+            Durante 4 sesiones: una serie menos por ejercicio y −10 % de carga. Luego vuelves más fuerte.
+          </span>
+          <div className={styles.deloadActions}>
+            <button type="button" className={styles.updateButton} onClick={() => void startDeload(db)}>
+              Sí, empezar
+            </button>
+            <button type="button" className={styles.secondarySmall} onClick={() => void snoozeDeload(db, Date.now())}>
+              Ahora no
+            </button>
+          </div>
         </div>
       )}
 
