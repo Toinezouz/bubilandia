@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { db } from '../../db/database.ts';
-import type { Exercise, PerformedExercise, SetEntry, TemplateItem } from '../../db/types.ts';
-import { addSet, setExerciseNote, setExerciseSkipped, updateSetValues, type LastPerformance } from '../../db/workouts.ts';
-import type { Suggestion } from '../../engine/index.ts';
+import type { Exercise, PerformedExercise, Readiness, SetEntry, TemplateItem } from '../../db/types.ts';
+import {
+  addSet,
+  answerFormCheck,
+  setExerciseNote,
+  setExerciseSkipped,
+  swapExercise,
+  toggleWarmupDone,
+  updateSetValues,
+  type LastPerformance,
+} from '../../db/workouts.ts';
+import { adjustAfterFirstSet, bonusSetAllowed, type Suggestion } from '../../engine/index.ts';
 import { formatKg, formatNumber, formatPerformance, formatSeconds, formatTarget } from '../../shared/format.ts';
 import { Stepper } from '../../shared/components/Stepper.tsx';
+import { ExerciseSheet } from '../exercises/ExerciseSheet.tsx';
 import styles from './workout.module.css';
 
 interface ExerciseCardProps {
@@ -21,18 +31,47 @@ interface ExerciseCardProps {
   /** Tap on a completed set's RPE badge → change it. */
   onEditRpe: (set: SetEntry) => void;
   onRemoveSet: (set: SetEntry) => void;
+  readiness: Readiness | null;
+  lightSession: boolean;
 }
 
 export function ExerciseCard(props: ExerciseCardProps) {
-  const { performed, exercise, item, sets, suggestion, last, expanded, onToggle } = props;
+  const { performed, exercise, item, suggestion, last, expanded, onToggle } = props;
   const [focusedSetId, setFocusedSetId] = useState<string | null>(null);
   const [noteOpen, setNoteOpen] = useState(performed.note !== '');
+  const [sheet, setSheet] = useState<'info' | 'swap' | null>(null);
 
+  // Warm-up rows are shown apart and never counted (§6.2).
+  const warmups = props.sets.filter((s) => s.isWarmup);
+  const sets = props.sets.filter((s) => !s.isWarmup);
   const doneCount = sets.filter((s) => s.completedAt !== null).length;
   const firstPending = sets.find((s) => s.completedAt === null);
   // The focused row shows the full editor; by default it is the next set to do.
   const focusedId = sets.some((s) => s.id === focusedSetId) ? focusedSetId : (firstPending?.id ?? null);
   const finished = sets.length > 0 && doneCount === sets.length;
+  const canSwap = doneCount === 0;
+
+  // §7.5 — after the 1st working set: "Hoy vas fuerte" / "Día duro", asked once.
+  const first = sets[0];
+  const adjustment =
+    item && first && first.completedAt !== null && first.reps !== null && firstPending && !performed.formCheckAnswered
+      ? adjustAfterFirstSet({
+          kind: exercise.kind,
+          increment: exercise.increment,
+          repMin: item.repMin,
+          targetReps: first.suggestedReps ?? item.repMin,
+          firstSet: { weight: first.weight, reps: first.reps, rpe: first.rpe },
+        })
+      : null;
+  const showAdjustment = adjustment !== null && !(adjustment.kind === 'increase' && props.lightSession);
+
+  // §7.5 — bonus set of "2-3 series" items: only on a good day, after an RPE ≤ 8.
+  const bonusOffered =
+    !!item &&
+    item.optionalExtraSets > 0 &&
+    finished &&
+    sets.length === item.baseSets &&
+    bonusSetAllowed({ lastSetRpe: sets.at(-1)?.rpe ?? null, readiness: props.readiness, lightSession: props.lightSession });
 
   const timed = exercise.kind === 'timed';
   const repsUnit = timed ? 's' : exercise.isUnilateral ? 'reps/lado' : 'reps';
@@ -68,7 +107,33 @@ export function ExerciseCard(props: ExerciseCardProps) {
               </p>
             )}
             {suggestion?.hint && <p className={styles.hint}>{suggestion.hint}</p>}
+            {exercise.machineSettings && (
+              <p>
+                <span className={styles.infoLabel}>Máquina:</span> {exercise.machineSettings}
+              </p>
+            )}
           </div>
+
+          {warmups.length > 0 && (
+            <div className={styles.warmups}>
+              <span className={styles.warmupTitle}>Calentamiento (no cuenta)</span>
+              {warmups.map((w) => {
+                const done = w.completedAt !== null;
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className={`${styles.warmupRow} ${done ? styles.setDone : ''}`}
+                    onClick={() => void toggleWarmupDone(db, w.id, Date.now())}
+                    aria-pressed={done}
+                  >
+                    <span className={styles.setValues}>{describe(w, exercise, repsUnit)}</span>
+                    <span className={done ? styles.rpeBadge : styles.pending}>{done ? 'Hecho ✓' : 'Tocar al terminar'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <ol className={styles.sets}>
             {sets.map((set, i) => {
@@ -140,9 +205,39 @@ export function ExerciseCard(props: ExerciseCardProps) {
             })}
           </ol>
 
+          {showAdjustment && adjustment && (
+            <div className={adjustment.kind === 'increase' ? styles.promptGood : styles.promptHard} role="status">
+              <p>
+                {adjustment.kind === 'increase'
+                  ? `Hoy vas fuerte: ¿subir a ${formatKg(adjustment.weight)}?`
+                  : `Día duro: ¿bajar a ${formatKg(adjustment.weight)}?`}
+              </p>
+              <div className={styles.promptActions}>
+                <button type="button" className={styles.promptYes} onClick={() => void answerFormCheck(db, performed.id, adjustment.weight)}>
+                  Sí
+                </button>
+                <button type="button" className={styles.promptNo} onClick={() => void answerFormCheck(db, performed.id, null)}>
+                  No
+                </button>
+              </div>
+            </div>
+          )}
+
+          {bonusOffered && (
+            <button type="button" className={styles.bonusButton} onClick={() => void addSet(db, performed.id).then(setFocusedSetId)}>
+              + Serie extra (opcional) · hoy vas bien
+            </button>
+          )}
+
           <div className={styles.cardActions}>
             <button type="button" className={styles.chip} onClick={() => void addSet(db, performed.id).then(setFocusedSetId)}>
               + Serie
+            </button>
+            <button type="button" className={styles.chip} onClick={() => setSheet('info')}>
+              Ficha
+            </button>
+            <button type="button" className={styles.chip} onClick={() => setSheet('swap')}>
+              Cambiar
             </button>
             <button type="button" className={styles.chip} onClick={() => setNoteOpen((o) => !o)}>
               Nota
@@ -170,6 +265,20 @@ export function ExerciseCard(props: ExerciseCardProps) {
             Retomar ejercicio
           </button>
         </div>
+      )}
+
+      {sheet && (
+        <ExerciseSheet
+          exercise={exercise}
+          swapMode={sheet === 'swap'}
+          canSwap={canSwap}
+          onSwap={(id) => {
+            setSheet(null);
+            setFocusedSetId(null);
+            void swapExercise(db, performed.id, id);
+          }}
+          onClose={() => setSheet(null)}
+        />
       )}
     </article>
   );

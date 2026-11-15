@@ -49,6 +49,8 @@ export interface Exercise {
   kind: ExerciseKind;
   /** Reps are per side; no rest between sides. */
   isUnilateral: boolean;
+  /** Multi-joint exercise ("composé"): the warm-up is suggested before the first one (schema v2). */
+  isCompound: boolean;
   /** kg for weighted/bodyweight, seconds for timed. */
   increment: number;
   defaultRestSeconds: number;
@@ -105,6 +107,10 @@ export interface Workout {
   notes: string;
   isDeload: boolean;
   status: WorkoutStatus;
+  /** Light session accepted (§7.5): remaining loads −10 %, no bonus set. */
+  lightSession?: boolean;
+  /** The light-session question was already asked (it is asked only once). */
+  lightSessionOffered?: boolean;
   /** Running rest timer, persisted so it survives a reload / app kill. */
   activeRest: ActiveRest | null;
 }
@@ -119,6 +125,8 @@ export interface PerformedExercise {
   order: number;
   skipped: boolean;
   note: string;
+  /** The "Hoy vas fuerte / Día duro" question after the first set was answered. */
+  formCheckAnswered?: boolean;
 }
 
 export interface SetEntry {

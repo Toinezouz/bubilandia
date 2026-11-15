@@ -96,6 +96,26 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         <h1 className={styles.title}>Ajustes</h1>
       </header>
 
+      <section className={styles.section} aria-labelledby="workout-title">
+        <h2 id="workout-title">Entreno</h2>
+        <Toggle
+          label="Sonido al terminar el descanso"
+          checked={settings?.soundEnabled ?? true}
+          onChange={(soundEnabled) => void db.settings.update(SETTINGS_ID, { soundEnabled })}
+        />
+        <Toggle
+          label="Pitido 10 s antes del final"
+          checked={settings?.tenSecondBeep ?? true}
+          disabled={settings?.soundEnabled === false}
+          onChange={(tenSecondBeep) => void db.settings.update(SETTINGS_ID, { tenSecondBeep })}
+        />
+        <Toggle
+          label="Calentamiento antes del primer ejercicio compuesto"
+          checked={settings?.warmupEnabled ?? true}
+          onChange={(warmupEnabled) => void db.settings.update(SETTINGS_ID, { warmupEnabled })}
+        />
+      </section>
+
       <section className={styles.section} aria-labelledby="backup-title">
         <h2 id="backup-title">Copia de seguridad</h2>
         <p className={styles.text}>
@@ -146,5 +166,14 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         onCancel={() => setImportState({ kind: 'idle' })}
       />
     </main>
+  );
+}
+
+function Toggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className={`${styles.toggle} ${disabled ? styles.toggleDisabled : ''}`}>
+      <span>{label}</span>
+      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+    </label>
   );
 }

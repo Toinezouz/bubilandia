@@ -24,7 +24,7 @@ async function hipThrust(at: number, sets: Array<[number, number, number]>) {
   const id = await startWorkout(db, 'pierna-a', at);
   const ex = (await loadWorkoutView(db, id))!.exercises[0]!;
   for (const [i, [weight, reps, rpe]] of sets.entries()) {
-    const setId = ex.sets[i]!.id;
+    const setId = ex.sets.filter((x) => !x.isWarmup)[i]!.id;
     await updateSetValues(db, setId, { weight, reps });
     await completeSet(db, setId, rpe, at + (i + 1) * MIN);
   }

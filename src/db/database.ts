@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { COMPOUND_IDS } from '../seed/exercises.ts';
 import type {
   Exercise,
   PerformedExercise,
@@ -14,7 +15,7 @@ export const DB_NAME = 'bubilandia-fuerza';
  * Current schema version. Bump it and add a new `this.version(n)` block (never edit an old one)
  * whenever indexes change or data must be migrated. Exports record this number (§6.5).
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export class AppDatabase extends Dexie {
   exercises!: EntityTable<Exercise, 'id'>;
@@ -35,6 +36,17 @@ export class AppDatabase extends Dexie {
       performedExercises: 'id, workoutId, exerciseId, [workoutId+order]',
       sets: 'id, performedExerciseId, completedAt',
       settings: 'id',
+    });
+
+    // v2: exercises get `isCompound` (warm-up before the first compound exercise).
+    // Same indexes; existing installs get the flag from the program definition.
+    this.version(2).stores({}).upgrade(async (tx) => {
+      await tx
+        .table('exercises')
+        .toCollection()
+        .modify((exercise: Partial<Exercise>) => {
+          if (exercise.isCompound === undefined) exercise.isCompound = COMPOUND_IDS.has(exercise.id ?? '');
+        });
     });
   }
 }

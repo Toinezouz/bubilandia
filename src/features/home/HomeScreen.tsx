@@ -4,6 +4,7 @@ import { loadHomeData, type HomeData } from '../../db/home.ts';
 import { MUSCLES, MUSCLE_LABELS, SETTINGS_ID, type SessionTemplate } from '../../db/types.ts';
 import { formatDaysAgo, volumeStatus } from '../../engine/index.ts';
 import { formatNumber } from '../../shared/format.ts';
+import { installUpdate, usePwaUpdateAvailable } from '../../shared/pwaUpdate.ts';
 import styles from './home.module.css';
 
 interface HomeScreenProps {
@@ -15,6 +16,7 @@ interface HomeScreenProps {
 
 export function HomeScreen({ onStart, onResume, onHistory, onSettings }: HomeScreenProps) {
   const data = useLiveQuery(() => loadHomeData(db, Date.now()), []);
+  const updateAvailable = usePwaUpdateAvailable();
   if (!data) return <main className={styles.page} aria-busy="true" />;
 
   const now = Date.now();
@@ -38,6 +40,15 @@ export function HomeScreen({ onStart, onResume, onHistory, onSettings }: HomeScr
         </div>
         <h1 className={styles.title}>¿Qué toca hoy?</h1>
       </header>
+
+      {updateAvailable && !data.activeWorkout && (
+        <div className={styles.update} role="status">
+          <span>Nueva versión disponible</span>
+          <button type="button" className={styles.updateButton} onClick={installUpdate}>
+            Actualizar
+          </button>
+        </div>
+      )}
 
       {data.activeWorkout && (
         <button type="button" className={styles.resume} onClick={() => onResume(data.activeWorkout!.id)}>

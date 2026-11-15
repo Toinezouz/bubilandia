@@ -25,6 +25,7 @@
   padding: 0 6px;
 }
 .topTitle {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -291,4 +292,93 @@
   background: var(--surface);
   color: var(--text-muted);
   font-size: 14px;
+}
+
+/* ── Phase 2: form of the day, warm-up, prompts, bonus set ── */
+.form {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.warmups {
+  display: grid;
+  gap: 6px;
+}
+.warmupTitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.warmupRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  text-align: left;
+  font-size: 16px;
+}
+.promptGood,
+.promptHard {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 2px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+}
+.promptHard {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+.promptGood p,
+.promptHard p {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.promptActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.promptYes,
+.promptNo {
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 17px;
+}
+.promptYes {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.promptNo {
+  background: var(--surface-2);
+}
+.bonusButton {
+  min-height: 52px;
+  border-radius: var(--radius);
+  border: 2px dashed var(--ok);
+  background: transparent;
+  color: var(--ok);
+  font-weight: 650;
+}
+.chip {
+  min-width: 0;
+  padding: 0 6px;
+}
+.cardActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+.chip {
+  white-space: nowrap;
 }

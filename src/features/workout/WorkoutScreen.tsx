@@ -1,20 +1,29 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { db } from '../../db/database.ts';
-import { SETTINGS_ID, type SetEntry } from '../../db/types.ts';
+import { READINESS_LABELS, SETTINGS_ID, type Readiness, type SetEntry } from '../../db/types.ts';
 import {
   abandonWorkout,
+  answerLightSession,
   adjustActiveRest,
   completeSet,
   loadWorkoutView,
   removeSet,
   setActiveRest,
+  setReadiness,
   suggestionFor,
   updateSetValues,
   type WorkoutView,
 } from '../../db/workouts.ts';
-import { startRest } from '../../engine/index.ts';
-import { ConfirmSheet } from '../../shared/components/Sheet.tsx';
+import {
+  READINESS_EXERCISES,
+  readinessLevel,
+  readinessScore,
+  shouldOfferLightSession,
+  startRest,
+} from '../../engine/index.ts';
+import { ConfirmSheet, Sheet } from '../../shared/components/Sheet.tsx';
+import ui from '../../shared/components/components.module.css';
 import { formatKg } from '../../shared/format.ts';
 import { unlockAudio } from '../../shared/sound.ts';
 import { useWakeLock } from '../../shared/useWakeLock.ts';
@@ -42,6 +51,13 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
   const [pending, setPending] = useState<Pending>(null);
   const settings = useLiveQuery(() => db.settings.get(SETTINGS_ID), []);
   const wakeLock = useWakeLock(true);
+
+  // Form of the day (§7.5): measured on the first exercises, saved with the workout.
+  const form = view ? measureForm(view, settings?.targetRPE ?? 8) : null;
+  useEffect(() => {
+    if (!view || !form || form.exercisesMeasured === 0) return;
+    if (form.readiness !== view.workout.readiness) void setReadiness(db, view.workout.id, form.readiness);
+  }, [view, form?.readiness, form?.exercisesMeasured]);
 
   // History-based suggestion + last performance per exercise. Depends only on which
   // exercises are in the workout, not on the sets being typed.
@@ -125,6 +141,12 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
         <div className={styles.topTitle}>
           <span className={styles.topCode}>{view.template?.code}</span>
           <h1>{view.template?.name ?? 'Sesión'}</h1>
+          {form?.readiness && (
+            <span className={styles.form}>
+              Forma: {READINESS_LABELS[form.readiness]}
+              {view.workout.lightSession ? ' · ligera' : ''}
+            </span>
+          )}
         </div>
       </header>
 
@@ -149,6 +171,8 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
               onDone={(set) => setPending({ kind: 'rpe', set, editing: false })}
               onEditRpe={(set) => setPending({ kind: 'rpe', set, editing: true })}
               onRemoveSet={(set) => setPending({ kind: 'remove', set })}
+              readiness={form?.readiness ?? null}
+              lightSession={view.workout.lightSession === true}
             />
           );
         })}
@@ -172,6 +196,30 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
         onSkip={() => void setActiveRest(db, workoutId, null)}
         onDismiss={() => void setActiveRest(db, workoutId, null)}
       />
+
+      <Sheet
+        open={
+          pending === null &&
+          !!form &&
+          shouldOfferLightSession({
+            exercisesMeasured: form.exercisesMeasured,
+            readiness: form.readiness,
+            alreadyOffered: view.workout.lightSessionOffered === true,
+          })
+        }
+        onClose={() => void answerLightSession(db, workoutId, false)}
+        title="¿Hacemos una sesión ligera hoy?"
+      >
+        <p className={ui.sheetText}>Hoy cuesta más de lo previsto. Bajamos un 10 % las cargas que quedan y sin serie extra.</p>
+        <div className={ui.sheetActions}>
+          <button type="button" className={ui.primaryButton} onClick={() => void answerLightSession(db, workoutId, true)}>
+            Sí, sesión ligera
+          </button>
+          <button type="button" className={ui.secondaryButton} onClick={() => void answerLightSession(db, workoutId, false)}>
+            No, seguir normal
+          </button>
+        </div>
+      </Sheet>
 
       <RpeSheet
         open={pending?.kind === 'rpe'}
@@ -216,6 +264,9 @@ function nextSetLabel(view: WorkoutView): string | null {
     const index = sets.findIndex((s) => s.completedAt === null);
     if (index === -1) continue;
     const set = sets[index]!;
+    if (set.isWarmup) {
+      return `${exercise.name} · calentamiento: ${set.weight === null ? '—' : formatKg(set.weight)} × ${set.reps ?? '—'}`;
+    }
     const reps = set.reps ?? '—';
     const values =
       exercise.kind === 'timed'
@@ -223,7 +274,31 @@ function nextSetLabel(view: WorkoutView): string | null {
         : set.weight === null
           ? `${reps} reps`
           : `${formatKg(set.weight)} × ${reps}`;
-    return `${exercise.name} · serie ${index + 1}: ${values}`;
+    const workingIndex = sets.filter((x) => !x.isWarmup).indexOf(set);
+    return `${exercise.name} · serie ${workingIndex + 1}: ${values}`;
   }
   return null;
+}
+
+/**
+ * Form of the day from the first exercises with completed working sets (timed ones excluded:
+ * seconds are not comparable with reps). Target reps = the pre-filled target of each set.
+ */
+function measureForm(view: WorkoutView, globalTargetRPE: number): { readiness: Readiness | null; exercisesMeasured: number } {
+  const measured = view.exercises
+    .filter((e) => !e.performed.skipped && e.exercise.kind !== 'timed')
+    .filter((e) => e.sets.some((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null))
+    .slice(0, READINESS_EXERCISES);
+  const samples = measured.flatMap((e) =>
+    e.sets
+      .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null)
+      .map((s) => ({
+        reps: s.reps!,
+        rpe: s.rpe,
+        targetReps: s.suggestedReps ?? e.item?.repMin ?? s.reps!,
+        targetRPE: e.item?.targetRPE ?? globalTargetRPE,
+      })),
+  );
+  const score = readinessScore(samples);
+  return { readiness: score === null ? null : readinessLevel(score), exercisesMeasured: measured.length };
 }

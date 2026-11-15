@@ -36,7 +36,7 @@ async function doWorkout(templateId: string, at: number, values: { weight: numbe
   const id = await startWorkout(db, templateId, at);
   const view = (await loadWorkoutView(db, id))!;
   for (const ex of view.exercises.slice(0, exercises)) {
-    for (const set of ex.sets) {
+    for (const set of ex.sets.filter((s) => !s.isWarmup)) {
       await updateSetValues(db, set.id, { weight: values.weight, reps: values.reps });
       await completeSet(db, set.id, values.rpe, at + HOUR / 2);
     }
@@ -73,12 +73,18 @@ describe('startWorkout', () => {
     await doWorkout('pierna-a', T0, { weight: 40, reps: 10, rpe: 8 }); // hip thrust 3 × 10 @ 40 → +2,5
     const id = await startWorkout(db, 'pierna-a', T0 + 72 * HOUR);
     const hipThrust = (await loadWorkoutView(db, id))!.exercises[0]!;
-    expect(hipThrust.sets.map((s) => [s.weight, s.reps])).toEqual([
+    const working = hipThrust.sets.filter((s) => !s.isWarmup);
+    expect(working.map((s) => [s.weight, s.reps])).toEqual([
       [42.5, 6],
       [42.5, 6],
       [42.5, 6],
     ]);
-    expect(hipThrust.sets[0]!.suggestedWeight).toBe(42.5);
+    expect(working[0]!.suggestedWeight).toBe(42.5);
+    // Warm-up before the first compound exercise: ~50 % × 10, ~70 % × 5 (§6.2), listed first.
+    expect(hipThrust.sets.filter((s) => s.isWarmup).map((s) => [s.index, s.weight, s.reps])).toEqual([
+      [0, 20, 10],
+      [1, 30, 5],
+    ]);
   });
 
   it('refuses a second workout while one is in progress', async () => {

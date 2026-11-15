@@ -5,11 +5,38 @@ import type { Exercise, Muscle } from '../db/types.ts';
  * "Cambiar ejercicio". Alternatives are full exercises so their progression is tracked separately.
  */
 
+/** Multi-joint exercises ("composé" in the program, §4) and their compound alternatives. */
+export const COMPOUND_IDS: ReadonlySet<string> = new Set([
+  'hip-thrust',
+  'seated-leg-press',
+  'chest-press',
+  'lat-pulldown',
+  'seated-shoulder-press',
+  'row',
+  'romanian-deadlift',
+  'single-leg-press',
+  'single-arm-machine-row',
+  'hip-thrust-machine',
+  'glute-bridge',
+  'leg-press-45',
+  'hack-squat',
+  'goblet-squat',
+  'incline-db-press',
+  'push-up',
+  'close-grip-pulldown',
+  'assisted-pull-up',
+  'shoulder-press-machine',
+  'db-row',
+  'db-romanian-deadlift',
+  'bulgarian-split-squat',
+]);
+
 type ExerciseInput = Pick<Exercise, 'id' | 'name' | 'primaryMuscle' | 'increment' | 'defaultRestSeconds' | 'cues'> &
-  Partial<Omit<Exercise, 'id' | 'name' | 'primaryMuscle' | 'increment' | 'defaultRestSeconds' | 'cues'>>;
+  Partial<Omit<Exercise, 'id' | 'name' | 'primaryMuscle' | 'increment' | 'defaultRestSeconds' | 'cues' | 'isCompound'>>;
 
 function ex(input: ExerciseInput): Exercise {
   return {
+    isCompound: COMPOUND_IDS.has(input.id),
     secondaryMuscle: null,
     kind: 'weighted',
     isUnilateral: false,

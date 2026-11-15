@@ -3,6 +3,7 @@
  * the safety net. Export → file; import → validate, preview, then replace all data.
  */
 
+import { COMPOUND_IDS } from '../seed/exercises.ts';
 import { SCHEMA_VERSION, TABLE_NAMES, type AppDatabase } from './database.ts';
 import {
   SETTINGS_ID,
@@ -154,10 +155,24 @@ export function parseBackup(text: string): ParseResult {
   return { ok: true, backup, preview: previewBackup(backup) };
 }
 
+/**
+ * Brings a backup made by an older app version up to the current schema
+ * (same steps as the Dexie upgrades in database.ts).
+ */
+export function migrateBackup(backup: BackupFile): BackupFile {
+  let tables = backup.tables;
+  if (backup.schemaVersion < 2) {
+    tables = {
+      ...tables,
+      exercises: tables.exercises.map((e) => ({ ...e, isCompound: e.isCompound ?? COMPOUND_IDS.has(e.id) })),
+    };
+  }
+  return { ...backup, schemaVersion: SCHEMA_VERSION, tables };
+}
+
 /** Replaces every table with the backup content, atomically (all or nothing). */
 export async function restoreBackup(db: AppDatabase, backup: BackupFile): Promise<void> {
-  // Only schema 1 exists so far; future versions migrate older backups here before writing.
-  const t = backup.tables;
+  const t = migrateBackup(backup).tables;
   await db.transaction('rw', TABLE_NAMES.map((name) => db.table(name)), async () => {
     await Promise.all(TABLE_NAMES.map((name) => db.table(name).clear()));
     await db.exercises.bulkAdd(t.exercises);

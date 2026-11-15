@@ -1,12 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import { App } from './App.tsx';
+import { initPwa } from './shared/pwaUpdate.ts';
 import './shared/styles/global.css';
 
-// Registers the service worker (precache → offline). With registerType 'prompt' the new
-// version waits until the user accepts it; the update banner itself comes in phase 2.
-registerSW({ immediate: true });
+// Service worker: offline cache + "Nueva versión disponible" banner (never reloads on its own).
+initPwa();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

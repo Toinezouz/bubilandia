@@ -3,7 +3,15 @@
  * reboot resumes exactly where she was (§5). Business rules come from the engine.
  */
 
-import { adjustRest, prefillForSet, suggestNext, type PerformedSet, type Suggestion } from '../engine/index.ts';
+import {
+  adjustRest,
+  lightSessionWeight,
+  prefillForSet,
+  suggestNext,
+  warmupSets,
+  type PerformedSet,
+  type Suggestion,
+} from '../engine/index.ts';
 import { newId } from '../shared/id.ts';
 import type { AppDatabase } from './database.ts';
 import {
@@ -11,6 +19,7 @@ import {
   type ActiveRest,
   type Exercise,
   type PerformedExercise,
+  type Readiness,
   type SessionTemplate,
   type SetEntry,
   type TemplateItem,
@@ -109,6 +118,8 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
     };
     await db.workouts.add(workout);
 
+    // Warm-up (§6.2): before the first compound exercise of the session, if enabled.
+    let warmupPending = settings?.warmupEnabled !== false;
     for (const item of [...template.items].sort((a, b) => a.order - b.order)) {
       const exercise = await db.exercises.get(item.exerciseId);
       if (!exercise) continue;
@@ -123,26 +134,152 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
         note: '',
       };
       await db.performedExercises.add(pe);
-      await db.sets.bulkAdd(
-        Array.from({ length: item.baseSets }, (_, index) => {
-          const prefill = prefillForSet(suggestion, index);
-          return {
-            id: newId(),
-            performedExerciseId: pe.id,
-            index,
-            isWarmup: false,
-            weight: prefill.weight,
-            reps: prefill.reps,
-            rpe: null,
-            completedAt: null,
-            suggestedWeight: suggestion.weight,
-            suggestedReps: prefill.reps,
-          } satisfies SetEntry;
-        }),
-      );
+      const withWarmup = warmupPending && exercise.isCompound;
+      if (withWarmup) warmupPending = false;
+      await db.sets.bulkAdd(buildSets(pe.id, exercise, suggestion, item.baseSets, withWarmup, false));
     }
     return workout.id;
   });
+}
+
+/**
+ * Rows for one exercise: optional warm-up sets (not counted anywhere, §6.2) followed by the
+ * working sets pre-filled from the suggestion. With `light`, loads are −10 % (light session).
+ */
+function buildSets(
+  performedExerciseId: string,
+  exercise: Exercise,
+  suggestion: Suggestion,
+  workingSets: number,
+  withWarmup: boolean,
+  light: boolean,
+): SetEntry[] {
+  const lighten = (w: number | null) => (light && w !== null ? lightSessionWeight(w, exercise.increment) : w);
+  const working = Array.from({ length: workingSets }, (_, i) => prefillForSet(suggestion, i));
+  const firstLoad = lighten(working[0]?.weight ?? null);
+  const warmups = withWarmup && exercise.kind === 'weighted' ? warmupSets(firstLoad, exercise.increment) : [];
+
+  const row = (index: number, values: Partial<SetEntry>): SetEntry => ({
+    id: newId(),
+    performedExerciseId,
+    index,
+    isWarmup: false,
+    weight: null,
+    reps: null,
+    rpe: null,
+    completedAt: null,
+    suggestedWeight: null,
+    suggestedReps: null,
+    ...values,
+  });
+  return [
+    ...warmups.map((w, i) => row(i, { isWarmup: true, weight: w.weight, reps: w.reps, suggestedWeight: w.weight, suggestedReps: w.reps })),
+    ...working.map((p, i) =>
+      row(warmups.length + i, {
+        weight: lighten(p.weight),
+        reps: p.reps,
+        suggestedWeight: lighten(suggestion.weight),
+        suggestedReps: p.reps,
+      }),
+    ),
+  ];
+}
+
+/** Warm-up row done / undone with one tap (no RPE, no rest). */
+export async function toggleWarmupDone(db: AppDatabase, setId: string, now: number): Promise<void> {
+  await db.transaction('rw', db.sets, async () => {
+    const set = await db.sets.get(setId);
+    if (!set?.isWarmup) return;
+    await db.sets.update(setId, { completedAt: set.completedAt === null ? now : null });
+  });
+}
+
+/**
+ * Answer to "Hoy vas fuerte / Día duro" (§7.5): with a load, it is applied to the remaining
+ * working sets of that exercise; either way the question is not asked again.
+ */
+export async function answerFormCheck(db: AppDatabase, performedExerciseId: string, weight: number | null): Promise<void> {
+  await db.transaction('rw', [db.sets, db.performedExercises], async () => {
+    if (weight !== null) {
+      await db.sets
+        .where('performedExerciseId')
+        .equals(performedExerciseId)
+        .filter((s) => !s.isWarmup && s.completedAt === null)
+        .modify({ weight });
+    }
+    await db.performedExercises.update(performedExerciseId, { formCheckAnswered: true });
+  });
+}
+
+export async function setReadiness(db: AppDatabase, workoutId: string, readiness: Readiness | null): Promise<void> {
+  await db.workouts.update(workoutId, { readiness });
+}
+
+/**
+ * "¿Hacemos una sesión ligera hoy?" (asked once). Yes → every remaining working load of the
+ * workout −10 %, and no bonus set.
+ */
+export async function answerLightSession(db: AppDatabase, workoutId: string, accept: boolean): Promise<void> {
+  await db.transaction('rw', [db.workouts, db.performedExercises, db.sets, db.exercises], async () => {
+    await db.workouts.update(workoutId, { lightSessionOffered: true, ...(accept ? { lightSession: true } : {}) });
+    if (!accept) return;
+    const performed = await db.performedExercises.where('workoutId').equals(workoutId).toArray();
+    for (const pe of performed) {
+      const exercise = await db.exercises.get(pe.exerciseId);
+      if (!exercise) continue;
+      await db.sets
+        .where('performedExerciseId')
+        .equals(pe.id)
+        .filter((s) => !s.isWarmup && s.completedAt === null && s.weight !== null)
+        .modify((s: SetEntry) => {
+          s.weight = lightSessionWeight(s.weight!, exercise.increment);
+        });
+    }
+  });
+}
+
+/**
+ * "Cambiar ejercicio" (§6.2): the alternative takes the slot (same template targets) with its
+ * own history and suggestion. Only before any working set of that slot is done.
+ */
+export async function swapExercise(db: AppDatabase, performedExerciseId: string, newExerciseId: string): Promise<void> {
+  await db.transaction('rw', ALL_TABLES(db), async () => {
+    const pe = await db.performedExercises.get(performedExerciseId);
+    if (!pe) throw new Error(`Unknown performed exercise ${performedExerciseId}`);
+    const sets = await db.sets.where('performedExerciseId').equals(pe.id).toArray();
+    if (sets.some((s) => !s.isWarmup && s.completedAt !== null)) throw new Error('Sets already done');
+    const exercise = await db.exercises.get(newExerciseId);
+    if (!exercise) throw new Error(`Unknown exercise ${newExerciseId}`);
+    const workout = await db.workouts.get(pe.workoutId);
+    const template = workout && (await db.sessionTemplates.get(workout.templateId));
+    const item = template?.items.find((i) => i.order === pe.order);
+    const settings = await db.settings.get(SETTINGS_ID);
+
+    const { suggestion } = await suggestionFor(
+      db,
+      exercise,
+      item ?? { repMin: 8, repMax: 12, targetRPE: null },
+      settings?.targetRPE ?? 8,
+      pe.workoutId,
+    );
+    const workingCount = Math.max(1, sets.filter((s) => !s.isWarmup).length);
+    const hadWarmup = sets.some((s) => s.isWarmup);
+
+    await db.sets.bulkDelete(sets.map((s) => s.id));
+    await db.sets.bulkAdd(
+      buildSets(pe.id, exercise, suggestion, workingCount, hadWarmup && exercise.isCompound, workout?.lightSession === true),
+    );
+    await db.performedExercises.update(pe.id, { exerciseId: exercise.id, formCheckAnswered: false });
+  });
+}
+
+/** Exercise sheet edits (machine settings, personal notes). */
+export async function updateExerciseInfo(
+  db: AppDatabase,
+  exerciseId: string,
+  values: Partial<Pick<Exercise, 'machineSettings' | 'notes'>>,
+): Promise<void> {
+  await db.exercises.update(exerciseId, values);
 }
 
 /** Saves the draft values of a row (each +/- tap, each keyboard edit). */
