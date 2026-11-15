@@ -1,0 +1,125 @@
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  overflow: hidden;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 0.35);
+  padding: 10px calc(12px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(12px + var(--safe-left));
+}
+.ended {
+  background: color-mix(in srgb, var(--ok) 22%, var(--surface));
+  border-top-color: var(--ok);
+}
+.progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--accent);
+  transform-origin: left;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.timeBlock {
+  display: grid;
+  min-width: 96px;
+}
+.label {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.time {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.controls {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.control,
+.skip {
+  min-height: 52px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 650;
+  font-size: 16px;
+  padding: 0 4px;
+}
+.control {
+  background: var(--surface-2);
+}
+.skip {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.next {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.endedText {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.go {
+  font-size: 21px;
+}
+.nextEnded {
+  font-size: 16px;
+  font-weight: 600;
+}
+.overtime {
+  color: var(--warn);
+  font-size: 14px;
+  font-weight: 600;
+}
+.dismiss {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+
+/* Full-screen colour flash at the end of the rest: visible even with the sound off. */
+.flash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: var(--ok);
+  animation: flash 1.6s ease-out forwards;
+}
+@keyframes flash {
+  0%,
+  30%,
+  60% {
+    opacity: 0.85;
+  }
+  15%,
+  45% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,55 @@
+.page {
+  padding: calc(8px + var(--safe-top)) 16px 32px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.header {
+  display: grid;
+  gap: 4px;
+}
+.back {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 17px;
+  padding: 0;
+}
+.title {
+  margin: 4px 0 0;
+  font-size: 28px;
+}
+.section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+.section h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.meta {
+  margin: 0;
+  font-size: 15px;
+}
+.ok {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 600;
+}
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+.section button:disabled {
+  opacity: 0.6;
+}

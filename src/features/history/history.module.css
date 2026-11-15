@@ -1,0 +1,124 @@
+.page {
+  padding: calc(8px + var(--safe-top)) 16px 32px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.header {
+  display: grid;
+  gap: 4px;
+}
+.back {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 17px;
+  padding: 0;
+}
+.title {
+  margin: 4px 0 0;
+  font-size: 28px;
+}
+.meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.empty {
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+.code {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  font-weight: 750;
+}
+.itemText {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+.itemTitle {
+  font-weight: 650;
+  font-size: 17px;
+}
+.chevron {
+  color: var(--text-muted);
+  font-size: 22px;
+}
+
+.notes {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  white-space: pre-wrap;
+}
+.recordsLine {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+.exercises {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.exercise {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+.exerciseName {
+  margin: 0;
+  font-size: 17px;
+}
+.sets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.sets li {
+  display: flex;
+  gap: 12px;
+  font-size: 16px;
+}
+.setIndex {
+  width: 18px;
+  color: var(--text-muted);
+}
+.rpe {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 14px;
+}

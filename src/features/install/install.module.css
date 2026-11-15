@@ -1,0 +1,140 @@
+.page {
+  padding: calc(20px + var(--safe-top)) 16px 32px;
+  display: grid;
+  gap: 18px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.header {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.appIcon {
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+}
+.title {
+  margin: 6px 0 0;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.lead {
+  margin: 0;
+  color: var(--text-muted);
+}
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 16%, var(--surface));
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.step {
+  display: flex;
+  gap: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.number {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 750;
+}
+.stepText {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.stepText p {
+  margin: 0;
+}
+
+.illustration {
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 10px;
+  overflow: hidden;
+}
+.highlight {
+  color: #0a84ff;
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  color: #0a84ff;
+  font-size: 24px;
+}
+.toolbarIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+.toolbarIcon:not(.highlight) {
+  opacity: 0.55;
+}
+.menu {
+  display: grid;
+  gap: 1px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--border);
+}
+.menuRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  font-size: 15px;
+}
+.menuRow.highlight {
+  outline-offset: -2px;
+  border-radius: 0;
+  font-weight: 650;
+}
+.homeScreen {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.homeIcon {
+  border-radius: 13px;
+}
+
+.warning {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+.continue {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: underline;
+  font-size: 15px;
+}

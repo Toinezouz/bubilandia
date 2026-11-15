@@ -1,0 +1,128 @@
+.page {
+  padding: calc(8px + var(--safe-top)) 16px 32px;
+  display: grid;
+  gap: 16px;
+}
+.header {
+  display: grid;
+  gap: 4px;
+}
+.back {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 17px;
+  padding: 0;
+}
+.title {
+  margin: 4px 0 0;
+  font-size: 30px;
+}
+.subtitle {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 17px;
+}
+.code {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 750;
+  font-size: 14px;
+}
+
+.stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stats div {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.stats dt {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.stats dd {
+  margin: 2px 0 0;
+  font-size: 26px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.readiness {
+  margin: 0;
+  font-weight: 600;
+}
+
+.records {
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.records h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+.records ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.records li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.records li > span:last-child {
+  display: grid;
+}
+.badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #1a1206;
+  font-size: 13px;
+  font-weight: 750;
+}
+.recordLine {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.warning {
+  margin: 0;
+  color: var(--warn);
+}
+.noteLabel {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.note {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px;
+  resize: vertical;
+}
+.actions {
+  display: grid;
+  gap: 8px;
+}

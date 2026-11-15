@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+*.local
+.DS_Store
+coverage
+.claude/
+
+# Private project brief (describes the user)
+BRIEF_WEBAPP_ENTRENAMIENTO.md

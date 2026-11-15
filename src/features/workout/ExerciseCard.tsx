@@ -1,0 +1,183 @@
+import { useState } from 'react';
+import { db } from '../../db/database.ts';
+import type { Exercise, PerformedExercise, SetEntry, TemplateItem } from '../../db/types.ts';
+import { addSet, setExerciseNote, setExerciseSkipped, updateSetValues, type LastPerformance } from '../../db/workouts.ts';
+import type { Suggestion } from '../../engine/index.ts';
+import { formatKg, formatNumber, formatPerformance, formatSeconds, formatTarget } from '../../shared/format.ts';
+import { Stepper } from '../../shared/components/Stepper.tsx';
+import styles from './workout.module.css';
+
+interface ExerciseCardProps {
+  performed: PerformedExercise;
+  exercise: Exercise;
+  item: TemplateItem | undefined;
+  sets: SetEntry[];
+  suggestion: Suggestion | undefined;
+  last: LastPerformance | null | undefined;
+  expanded: boolean;
+  onToggle: () => void;
+  /** "Hecho" tapped on a pending set → parent opens the RPE sheet. */
+  onDone: (set: SetEntry) => void;
+  /** Tap on a completed set's RPE badge → change it. */
+  onEditRpe: (set: SetEntry) => void;
+  onRemoveSet: (set: SetEntry) => void;
+}
+
+export function ExerciseCard(props: ExerciseCardProps) {
+  const { performed, exercise, item, sets, suggestion, last, expanded, onToggle } = props;
+  const [focusedSetId, setFocusedSetId] = useState<string | null>(null);
+  const [noteOpen, setNoteOpen] = useState(performed.note !== '');
+
+  const doneCount = sets.filter((s) => s.completedAt !== null).length;
+  const firstPending = sets.find((s) => s.completedAt === null);
+  // The focused row shows the full editor; by default it is the next set to do.
+  const focusedId = sets.some((s) => s.id === focusedSetId) ? focusedSetId : (firstPending?.id ?? null);
+  const finished = sets.length > 0 && doneCount === sets.length;
+
+  const timed = exercise.kind === 'timed';
+  const repsUnit = timed ? 's' : exercise.isUnilateral ? 'reps/lado' : 'reps';
+  const rest = item?.restSeconds ?? exercise.defaultRestSeconds;
+  const range = item ? (timed ? `${item.repMin}-${item.repMax} s` : `${item.repMin}-${item.repMax}`) : '';
+  const target = suggestion ? formatTarget(suggestion, exercise.kind, exercise.isUnilateral) : null;
+
+  return (
+    <article className={`${styles.card} ${expanded ? styles.cardOpen : ''} ${performed.skipped ? styles.cardSkipped : ''}`}>
+      <button type="button" className={styles.cardHeader} onClick={onToggle} aria-expanded={expanded}>
+        <span className={styles.cardTitle}>
+          <span className={styles.exerciseName}>{exercise.name}</span>
+          <span className={styles.cardMeta}>
+            {item ? `${item.baseSets}${item.optionalExtraSets ? '-' + (item.baseSets + item.optionalExtraSets) : ''} × ${range}` : ''} ·
+            descanso {formatSeconds(rest)}
+          </span>
+        </span>
+        <span className={`${styles.progress} ${finished ? styles.progressDone : ''}`}>
+          {performed.skipped ? 'Saltado' : `${doneCount}/${sets.length}`}
+        </span>
+      </button>
+
+      {expanded && !performed.skipped && (
+        <div className={styles.cardBody}>
+          <div className={styles.infoLines}>
+            <p>
+              <span className={styles.infoLabel}>La última vez:</span>{' '}
+              {last ? formatPerformance(last.sets, exercise.kind) : last === null ? 'primera vez' : '…'}
+            </p>
+            {target && (
+              <p>
+                <span className={styles.infoLabel}>Hoy:</span> <strong>{target}</strong>
+              </p>
+            )}
+            {suggestion?.hint && <p className={styles.hint}>{suggestion.hint}</p>}
+          </div>
+
+          <ol className={styles.sets}>
+            {sets.map((set, i) => {
+              const done = set.completedAt !== null;
+              const focused = set.id === focusedId;
+              if (!focused) {
+                return (
+                  <li key={set.id}>
+                    <button type="button" className={`${styles.setCompact} ${done ? styles.setDone : ''}`} onClick={() => setFocusedSetId(set.id)}>
+                      <span className={styles.setIndex}>{i + 1}</span>
+                      <span className={styles.setValues}>{describe(set, exercise, repsUnit)}</span>
+                      {done ? (
+                        <span className={styles.rpeBadge}>RPE {set.rpe !== null ? formatNumber(set.rpe) : '—'}</span>
+                      ) : (
+                        <span className={styles.pending}>Pendiente</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              }
+              return (
+                <li key={set.id} className={`${styles.setEditor} ${done ? styles.setEditorDone : ''}`}>
+                  <div className={styles.setEditorHead}>
+                    <span>
+                      Serie {i + 1}
+                      {done && ' · hecha ✓'}
+                    </span>
+                    <button type="button" className={styles.linkButton} onClick={() => props.onRemoveSet(set)}>
+                      Eliminar
+                    </button>
+                  </div>
+                  <div className={timed ? styles.steppersOne : styles.steppers}>
+                    {!timed && (
+                      <Stepper
+                        label="peso"
+                        unit="kg"
+                        decimal
+                        value={set.weight}
+                        step={exercise.increment}
+                        allowEmpty={exercise.kind === 'bodyweight' || set.weight === null}
+                        min={exercise.increment}
+                        onChange={(weight) => void updateSetValues(db, set.id, { weight })}
+                      />
+                    )}
+                    <Stepper
+                      label={timed ? 'segundos' : 'repeticiones'}
+                      unit={repsUnit}
+                      value={set.reps}
+                      step={timed ? exercise.increment : 1}
+                      min={timed ? exercise.increment : 1}
+                      onChange={(reps) => void updateSetValues(db, set.id, { reps })}
+                    />
+                  </div>
+                  {done ? (
+                    <button type="button" className={styles.secondaryWide} onClick={() => props.onEditRpe(set)}>
+                      RPE {set.rpe !== null ? formatNumber(set.rpe) : '—'} · cambiar
+                    </button>
+                  ) : (
+                    <button type="button" className={styles.doneButton} disabled={set.reps === null} onClick={() => {
+                        setFocusedSetId(null); // next pending set gets the editor once this one is done
+                        props.onDone(set);
+                      }}
+                    >
+                      Hecho
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className={styles.cardActions}>
+            <button type="button" className={styles.chip} onClick={() => void addSet(db, performed.id).then(setFocusedSetId)}>
+              + Serie
+            </button>
+            <button type="button" className={styles.chip} onClick={() => setNoteOpen((o) => !o)}>
+              Nota
+            </button>
+            <button type="button" className={styles.chip} onClick={() => void setExerciseSkipped(db, performed.id, true)}>
+              Saltar
+            </button>
+          </div>
+
+          {noteOpen && (
+            <textarea
+              className={styles.note}
+              placeholder="Nota rápida (sensaciones, ajustes…)"
+              defaultValue={performed.note}
+              rows={2}
+              onChange={(e) => void setExerciseNote(db, performed.id, e.target.value)}
+            />
+          )}
+        </div>
+      )}
+
+      {expanded && performed.skipped && (
+        <div className={styles.cardBody}>
+          <button type="button" className={styles.secondaryWide} onClick={() => void setExerciseSkipped(db, performed.id, false)}>
+            Retomar ejercicio
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function describe(set: SetEntry, exercise: Exercise, repsUnit: string): string {
+  const reps = set.reps === null ? '—' : String(set.reps);
+  if (exercise.kind === 'timed') return `${reps} s`;
+  if (set.weight === null) return `${reps} ${repsUnit}`;
+  return `${formatKg(set.weight)} × ${reps}`;
+}

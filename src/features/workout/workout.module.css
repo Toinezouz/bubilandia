@@ -1,0 +1,294 @@
+.page {
+  padding: 0 12px 24px;
+  display: grid;
+  gap: 12px;
+}
+
+/* ── Top bar ─────────────────────────────────────────────── */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -12px;
+  padding: calc(4px + var(--safe-top)) 12px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.backButton {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 17px;
+  padding: 0 6px;
+}
+.topTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.topTitle h1 {
+  margin: 0;
+  font-size: 19px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topCode {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 750;
+}
+
+/* ── Exercise card ───────────────────────────────────────── */
+.cards {
+  display: grid;
+  gap: 8px;
+}
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.cardOpen {
+  outline: 2px solid var(--border);
+}
+.cardSkipped .exerciseName {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.cardHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+.cardTitle {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+.exerciseName {
+  font-weight: 650;
+  font-size: 17px;
+}
+.cardMeta {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.progress {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.progressDone {
+  color: var(--ok);
+}
+.cardBody {
+  padding: 0 12px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.infoLines {
+  display: grid;
+  gap: 2px;
+  font-size: 15px;
+}
+.infoLines p {
+  margin: 0;
+}
+.infoLabel {
+  color: var(--text-muted);
+}
+.hint {
+  color: var(--warn);
+}
+
+/* ── Sets ────────────────────────────────────────────────── */
+.sets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.setCompact {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: none;
+  background: var(--surface-2);
+  text-align: left;
+  font-size: 17px;
+}
+.setDone {
+  background: color-mix(in srgb, var(--ok) 14%, var(--surface-2));
+}
+.setIndex {
+  width: 22px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.setValues {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.rpeBadge {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ok);
+}
+.pending {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.setEditor {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 2px solid var(--accent);
+}
+.setEditorDone {
+  border-color: var(--ok);
+}
+.setEditorHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 650;
+}
+.steppers {
+  display: grid;
+  gap: 6px;
+}
+.steppersOne {
+  display: grid;
+}
+.doneButton {
+  min-height: 56px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 19px;
+  font-weight: 750;
+}
+.doneButton:disabled {
+  opacity: 0.4;
+}
+
+/* ── Actions ─────────────────────────────────────────────── */
+.cardActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  flex: 1;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.note {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 10px;
+  resize: vertical;
+}
+.linkButton {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: underline;
+  min-height: 44px;
+  font-size: 15px;
+}
+.secondaryWide {
+  min-height: 48px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.footer {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.finishButton {
+  min-height: 56px;
+  border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+/* ── RPE sheet ───────────────────────────────────────────── */
+.rpeList {
+  display: grid;
+  gap: 6px;
+}
+.rpeOption {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: var(--surface-2);
+  text-align: left;
+  font-size: 16px;
+}
+.rpeZone {
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
+}
+.rpeCurrent {
+  border-color: var(--accent);
+}
+.rpeValue {
+  min-width: 36px;
+  font-size: 22px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Room for the fixed rest-timer bar. */
+.pageWithTimer {
+  padding-bottom: calc(150px + var(--safe-bottom));
+}
+.tip {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 14px;
+}

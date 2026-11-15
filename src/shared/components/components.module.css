@@ -1,0 +1,119 @@
+/* ── Buttons ─────────────────────────────────────────────── */
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--radius);
+  border: none;
+  font-weight: 650;
+  font-size: 17px;
+}
+.primaryButton {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.secondaryButton {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.dangerButton {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ── Bottom sheet ────────────────────────────────────────── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 0.55);
+  display: flex;
+  align-items: flex-end;
+  animation: fade 120ms ease-out;
+}
+.sheet {
+  width: 100%;
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(16px + var(--safe-bottom));
+  animation: rise 140ms ease-out;
+}
+.sheetTitle {
+  margin: 0 0 12px;
+  font-size: 19px;
+}
+.sheetText {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}
+.sheetActions {
+  display: grid;
+  gap: 10px;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(24px);
+  }
+}
+
+/* ── Stepper ─────────────────────────────────────────────── */
+.stepper {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.stepButton {
+  height: 52px;
+  min-width: 48px;
+  border-radius: 12px;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.stepButton:active {
+  background: var(--border);
+}
+.stepValue {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+.stepInput {
+  width: 100%;
+  min-width: 0;
+  max-width: 6ch;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  text-align: center;
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 0;
+}
+.stepInput:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+.stepUnit {
+  color: var(--text-muted);
+  font-size: 14px;
+}
