@@ -27,3 +27,19 @@ export function volumeStatus(sets: number, target: { min: number; max: number })
   if (sets > target.max) return 'above';
   return 'within';
 }
+
+/**
+ * Keeps an edited weekly target coherent: whole numbers, 0 ≤ min ≤ max ≤ 40. The bound she
+ * just changed wins: raising the minimum above the maximum pushes the maximum up, and
+ * lowering the maximum below the minimum pulls the minimum down.
+ */
+export function normalizeTarget(target: { min: number; max: number }, changed: 'min' | 'max'): { min: number; max: number } {
+  const clamp = (n: number) => Math.min(40, Math.max(0, Math.round(n)));
+  let min = clamp(target.min);
+  let max = clamp(target.max);
+  if (min > max) {
+    if (changed === 'min') max = min;
+    else min = max;
+  }
+  return { min, max };
+}

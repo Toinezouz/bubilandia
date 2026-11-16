@@ -1,12 +1,21 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState, type ReactNode } from 'react';
 import { db } from '../../db/database.ts';
-import { addTemplateItem, moveTemplateItem, removeTemplateItem, updateExerciseIncrement, updateTemplateItem } from '../../db/program.ts';
+import {
+  addTemplateItem,
+  createExercise,
+  moveTemplateItem,
+  removeTemplateItem,
+  updateExercise,
+  updateExerciseIncrement,
+  updateTemplateItem,
+} from '../../db/program.ts';
 import { MUSCLE_LABELS, MUSCLES, type Exercise, type TemplateItem } from '../../db/types.ts';
 import { getActiveWorkout } from '../../db/workouts.ts';
 import { ConfirmSheet, Sheet } from '../../shared/components/Sheet.tsx';
 import { Stepper } from '../../shared/components/Stepper.tsx';
 import { formatNumber, formatSeconds, parseDecimal } from '../../shared/format.ts';
+import { ExerciseForm } from '../exercises/ExerciseForm.tsx';
 import styles from './settings.module.css';
 
 interface ProgramScreenProps {
@@ -31,6 +40,7 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
   const [open, setOpen] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<TemplateItem | null>(null);
+  const [form, setForm] = useState<{ exercise?: Exercise } | null>(null);
 
   if (!data?.template) return <main className={styles.page} aria-busy="true" />;
   const { template, exercises, active } = data;
@@ -132,6 +142,9 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
                       onSave={(v) => void updateExerciseIncrement(db, ex.id, v)}
                     />
                   </div>
+                  <button type="button" className={styles.smallButton} onClick={() => setForm({ exercise: ex })}>
+                    Editar ejercicio (nombre, músculos…)
+                  </button>
                   <div className={styles.itemActions}>
                     <button type="button" className={styles.smallButton} disabled={item.order === 0} onClick={() => { setOpen(item.order - 1); void moveTemplateItem(db, templateId, item.order, -1); }}>
                       ↑ Subir
@@ -160,6 +173,16 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
       </button>
 
       <Sheet open={adding} onClose={() => setAdding(false)} title="Añadir ejercicio">
+        <button
+          type="button"
+          className={styles.addButton}
+          onClick={() => {
+            setAdding(false);
+            setForm({});
+          }}
+        >
+          + Crear ejercicio nuevo
+        </button>
         <ExercisePicker
           exercises={[...exercises.values()].filter((e) => !items.some((i) => i.exerciseId === e.id))}
           onPick={(id) => {
@@ -167,6 +190,23 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
             void addTemplateItem(db, templateId, id);
           }}
         />
+      </Sheet>
+
+      <Sheet open={form !== null} onClose={() => setForm(null)} title={form?.exercise ? 'Editar ejercicio' : 'Nuevo ejercicio'}>
+        {form && (
+          <ExerciseForm
+            exercise={form.exercise}
+            existingNames={[...exercises.values()].filter((e) => e.id !== form.exercise?.id).map((e) => e.name)}
+            onCancel={() => setForm(null)}
+            onSave={(draft) => {
+              const editing = form.exercise;
+              setForm(null);
+              if (editing) void updateExercise(db, editing.id, draft);
+              // A new exercise is added to this session right away.
+              else void createExercise(db, draft).then((id) => addTemplateItem(db, templateId, id));
+            }}
+          />
+        )}
       </Sheet>
 
       <ConfirmSheet

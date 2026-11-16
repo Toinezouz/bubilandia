@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { prefillForSet, suggestNext } from '../src/engine/progression.ts';
-import { setsPerMuscle, volumeStatus } from '../src/engine/volume.ts';
+import { normalizeTarget, setsPerMuscle, volumeStatus } from '../src/engine/volume.ts';
 import { formatKg, formatPerformance, formatSeconds, formatTarget, parseDecimal } from '../src/shared/format.ts';
 import { newId } from '../src/shared/id.ts';
 
@@ -86,5 +86,18 @@ describe('weekly volume', () => {
     expect(volumeStatus(7, { min: 8, max: 10 })).toBe('below');
     expect(volumeStatus(8, { min: 8, max: 10 })).toBe('within');
     expect(volumeStatus(10.5, { min: 8, max: 10 })).toBe('above');
+  });
+});
+
+describe('editing a weekly target', () => {
+  it('keeps min ≤ max: the bound she just changed wins', () => {
+    expect(normalizeTarget({ min: 12, max: 10 }, 'min')).toEqual({ min: 12, max: 12 });
+    expect(normalizeTarget({ min: 12, max: 10 }, 'max')).toEqual({ min: 10, max: 10 });
+    expect(normalizeTarget({ min: 8, max: 10 }, 'min')).toEqual({ min: 8, max: 10 });
+  });
+
+  it('stays within 0-40 whole sets', () => {
+    expect(normalizeTarget({ min: -3, max: 99 }, 'max')).toEqual({ min: 0, max: 40 });
+    expect(normalizeTarget({ min: 8.4, max: 10.6 }, 'min')).toEqual({ min: 8, max: 11 });
   });
 });

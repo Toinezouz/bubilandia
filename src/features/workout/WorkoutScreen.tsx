@@ -13,10 +13,12 @@ import {
   setReadiness,
   suggestionFor,
   updateSetValues,
+  type LastPerformance,
   type WorkoutView,
 } from '../../db/workouts.ts';
 import {
   READINESS_EXERCISES,
+  performanceIndex,
   readinessLevel,
   readinessScore,
   shouldOfferLightSession,
@@ -52,13 +54,6 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
   const settings = useLiveQuery(() => db.settings.get(SETTINGS_ID), []);
   const wakeLock = useWakeLock(true);
 
-  // Form of the day (§7.5): measured on the first exercises, saved with the workout.
-  const form = view ? measureForm(view, settings?.targetRPE ?? 8) : null;
-  useEffect(() => {
-    if (!view || !form || form.exercisesMeasured === 0) return;
-    if (form.readiness !== view.workout.readiness) void setReadiness(db, view.workout.id, form.readiness);
-  }, [view, form?.readiness, form?.exercisesMeasured]);
-
   // History-based suggestion + last performance per exercise. Depends only on which
   // exercises are in the workout, not on the sets being typed.
   const exerciseKey = view?.exercises.map((e) => `${e.performed.id}:${e.exercise.id}`).join('|') ?? '';
@@ -80,6 +75,14 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
     );
     return new Map(entries);
   }, [exerciseKey]);
+
+  // Form of the day (§7.5): today's performance on the first exercises compared with the
+  // last time each was done; saved with the workout.
+  const form = view && guidance ? measureForm(view, guidance) : null;
+  useEffect(() => {
+    if (!view || !form || form.exercisesMeasured === 0) return;
+    if (form.readiness !== view.workout.readiness) void setReadiness(db, view.workout.id, form.readiness);
+  }, [view, form?.readiness, form?.exercisesMeasured]);
 
   if (view === undefined) return <main className={styles.page} aria-busy="true" />;
   if (view === null || view.workout.status !== 'in_progress') {
@@ -282,24 +285,28 @@ function nextSetLabel(view: WorkoutView): string | null {
 }
 
 /**
- * Form of the day from the first exercises with completed working sets (timed ones excluded:
- * seconds are not comparable with reps). Target reps = the pre-filled target of each set.
+ * Form of the day: for the first exercises done today that also have a history, today's
+ * performance (best RPE-adjusted e1RM so far) against the last session's. Repeating last
+ * session is a normal day. Not measured without history (calibration), for timed exercises,
+ * nor in sessions done lighter on purpose (deload week, −10 % after a break), where an easy
+ * RPE says nothing about her form.
  */
-function measureForm(view: WorkoutView, globalTargetRPE: number): { readiness: Readiness | null; exercisesMeasured: number } {
-  const measured = view.exercises
-    .filter((e) => !e.performed.skipped && e.exercise.kind !== 'timed')
-    .filter((e) => e.sets.some((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null))
+function measureForm(
+  view: WorkoutView,
+  guidance: ReadonlyMap<string, { last: LastPerformance | null }>,
+): { readiness: Readiness | null; exercisesMeasured: number } {
+  if (view.workout.isDeload || view.workout.reducedLoads) return { readiness: null, exercisesMeasured: 0 };
+  const samples = view.exercises
+    .filter((e) => !e.performed.skipped)
+    .flatMap((e) => {
+      const done = e.sets
+        .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null)
+        .map((s) => ({ weight: s.weight, reps: s.reps!, rpe: s.rpe }));
+      const today = performanceIndex(e.exercise.kind, done);
+      const reference = performanceIndex(e.exercise.kind, guidance.get(e.performed.id)?.last?.sets ?? []);
+      return today !== null && reference !== null ? [{ today, reference }] : [];
+    })
     .slice(0, READINESS_EXERCISES);
-  const samples = measured.flatMap((e) =>
-    e.sets
-      .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null)
-      .map((s) => ({
-        reps: s.reps!,
-        rpe: s.rpe,
-        targetReps: s.suggestedReps ?? e.item?.repMin ?? s.reps!,
-        targetRPE: e.item?.targetRPE ?? globalTargetRPE,
-      })),
-  );
   const score = readinessScore(samples);
-  return { readiness: score === null ? null : readinessLevel(score), exercisesMeasured: measured.length };
+  return { readiness: score === null ? null : readinessLevel(score), exercisesMeasured: samples.length };
 }

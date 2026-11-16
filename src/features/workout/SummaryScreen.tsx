@@ -81,7 +81,11 @@ export function SummaryScreen({ workoutId, onBack, onFinished }: SummaryScreenPr
         </section>
       )}
 
-      {summary.pendingSets > 0 && (
+      {summary.setCount === 0 && (
+        <p className={styles.warning}>No has terminado ninguna serie: esta sesión no se guardará ni contará en la rotación.</p>
+      )}
+
+      {summary.setCount > 0 && summary.pendingSets > 0 && (
         <p className={styles.warning}>
           Quedan {summary.pendingSets} {summary.pendingSets === 1 ? 'serie sin hacer: no se guardará' : 'series sin hacer: no se guardarán'}.
         </p>
@@ -100,7 +104,7 @@ export function SummaryScreen({ workoutId, onBack, onFinished }: SummaryScreenPr
 
       <div className={styles.actions}>
         <button type="button" className={ui.primaryButton} onClick={() => void finish()}>
-          Terminar
+          {summary.setCount > 0 ? 'Terminar' : 'Descartar sesión'}
         </button>
       </div>
     </main>

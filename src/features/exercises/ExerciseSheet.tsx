@@ -1,8 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useState } from 'react';
 import { db } from '../../db/database.ts';
 import { MUSCLE_LABELS, type Exercise } from '../../db/types.ts';
 import { updateExerciseInfo } from '../../db/workouts.ts';
 import { Sheet } from '../../shared/components/Sheet.tsx';
+import { ExerciseProgressContent } from '../history/ExerciseProgressScreen.tsx';
 import styles from './exercises.module.css';
 
 interface ExerciseSheetProps {
@@ -21,6 +23,7 @@ export function ExerciseSheet({ exercise, swapMode, canSwap, onSwap, onClose }: 
     async () => (exercise ? (await db.exercises.bulkGet(exercise.alternativeIds)).filter((e): e is Exercise => !!e) : []),
     [exercise?.id, exercise?.alternativeIds.join(',')],
   );
+  const [showProgress, setShowProgress] = useState(false);
   if (!exercise) return null;
 
   const altBlock = (
@@ -55,15 +58,17 @@ export function ExerciseSheet({ exercise, swapMode, canSwap, onSwap, onClose }: 
           {exercise.isUnilateral && ' · unilateral'}
         </p>
 
-        <section className={styles.block}>
-          <h3>Técnica</h3>
-          <ul className={styles.cues}>
-            {exercise.cues.map((cue) => (
-              <li key={cue}>{cue}</li>
-            ))}
-          </ul>
-          {exercise.notes && <p className={styles.muted}>{exercise.notes}</p>}
-        </section>
+        {(exercise.cues.length > 0 || exercise.notes) && (
+          <section className={styles.block}>
+            <h3>Técnica</h3>
+            <ul className={styles.cues}>
+              {exercise.cues.map((cue) => (
+                <li key={cue}>{cue}</li>
+              ))}
+            </ul>
+            {exercise.notes && <p className={styles.muted}>{exercise.notes}</p>}
+          </section>
+        )}
 
         <label className={styles.block}>
           <h3>Ajustes de máquina</h3>
@@ -77,6 +82,17 @@ export function ExerciseSheet({ exercise, swapMode, canSwap, onSwap, onClose }: 
         </label>
 
         {!swapMode && altBlock}
+
+        {showProgress ? (
+          <section className={styles.progressBody} aria-label="Progreso">
+            <h3 className={styles.progressTitle}>Progreso</h3>
+            <ExerciseProgressContent exerciseId={exercise.id} />
+          </section>
+        ) : (
+          <button type="button" className={styles.progressLink} onClick={() => setShowProgress(true)}>
+            Ver progreso y récords
+          </button>
+        )}
       </div>
     </Sheet>
   );

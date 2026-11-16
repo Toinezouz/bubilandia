@@ -63,3 +63,104 @@
   font-weight: 650;
   padding: 0 14px;
 }
+
+/* ── Exercise form ── */
+.form {
+  display: grid;
+  gap: 12px;
+}
+.field {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 17px;
+}
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.segment {
+  min-height: 46px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 0 4px;
+}
+.segmentOn {
+  border-color: var(--accent);
+}
+.segment:disabled {
+  opacity: 0.55;
+}
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+}
+.switchRow input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 51px;
+  height: 31px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  transition: background 150ms;
+}
+.switchRow input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 150ms;
+}
+.switchRow input:checked {
+  background: var(--ok);
+}
+.switchRow input:checked::after {
+  transform: translateX(20px);
+}
+.formError {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+.progressLink {
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 650;
+}
+.progressBody {
+  display: grid;
+  gap: 12px;
+}
+.progressTitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

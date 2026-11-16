@@ -18,6 +18,8 @@ export interface ExerciseSession {
   workoutId: string;
   at: number;
   isDeload: boolean;
+  /** Light session or −10 % return session: shown, but ignored by stagnation. */
+  isLight: boolean;
   sets: PerformedSet[];
   /** Best e1RM of the session (null for timed / bodyweight). */
   e1rm: number | null;
@@ -51,7 +53,7 @@ export async function loadExerciseProgress(db: AppDatabase, exerciseId: string):
       .sort((a, b) => a.index - b.index)
       .map(toPerformed);
     if (sets.length === 0) return;
-    sessions.push({ workoutId: w.id, at: w.startedAt, isDeload: w.isDeload, sets, e1rm: bestE1RM(exercise.kind, sets), volumeKg: totalVolume(sets) });
+    sessions.push({ workoutId: w.id, at: w.startedAt, isDeload: w.isDeload, isLight: w.lightSession === true || w.reducedLoads === true, sets, e1rm: bestE1RM(exercise.kind, sets), volumeKg: totalVolume(sets) });
   });
   sessions.sort((a, b) => a.at - b.at);
 
@@ -74,7 +76,7 @@ export async function loadExerciseProgress(db: AppDatabase, exerciseId: string):
     return { reps, weight: top.weight, at: top.at };
   });
 
-  const e1rms = sessions.filter((s) => !s.isDeload && s.e1rm !== null).map((s) => s.e1rm!);
+  const e1rms = sessions.filter((s) => !s.isDeload && !s.isLight && s.e1rm !== null).map((s) => s.e1rm!);
   return { exercise, sessions, bestE1RM: best, bestByReps, stagnating: isStagnating(e1rms) };
 }
 

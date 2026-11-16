@@ -4,13 +4,16 @@ import { AppDatabase } from '../src/db/database.ts';
 import {
   addItem,
   addTemplateItem,
+  createExercise,
   moveItem,
   moveTemplateItem,
   patchItem,
   removeItem,
   removeTemplateItem,
+  updateExercise,
   updateExerciseIncrement,
   updateTemplateItem,
+  validateExerciseDraft,
 } from '../src/db/program.ts';
 import { deleteWorkout, loadWorkoutView, startWorkout, completeSet, updateSetValues, finishWorkout } from '../src/db/workouts.ts';
 import { SEED_EXERCISES } from '../src/seed/exercises.ts';
@@ -91,5 +94,71 @@ describe('program editing in the database', () => {
     expect(await db.workouts.count()).toBe(0);
     expect(await db.performedExercises.count()).toBe(0);
     expect(await db.sets.count()).toBe(0);
+  });
+});
+
+describe('custom exercises', () => {
+  let db: AppDatabase;
+  beforeEach(async () => {
+    db = new AppDatabase(`test-${crypto.randomUUID()}`);
+    await seedIfEmpty(db);
+  });
+  afterEach(async () => {
+    await db.delete();
+  });
+
+  const draft = {
+    name: '  Sentadilla con barra ',
+    primaryMuscle: 'quads' as const,
+    secondaryMuscle: 'glutes' as const,
+    kind: 'weighted' as const,
+    isUnilateral: false,
+    isCompound: true,
+    defaultRestSeconds: 150,
+  };
+
+  it('validates the draft', () => {
+    expect(validateExerciseDraft(draft, [])).toBeNull();
+    expect(validateExerciseDraft({ ...draft, name: ' ' }, [])).toContain('nombre');
+    expect(validateExerciseDraft(draft, ['sentadilla con BARRA'])).toContain('Ya existe');
+    expect(validateExerciseDraft({ ...draft, secondaryMuscle: 'quads' }, [])).toContain('secundario');
+  });
+
+  it('creates an exercise that can be added to a session and trained', async () => {
+    const id = await createExercise(db, draft);
+    expect(await db.exercises.get(id)).toMatchObject({
+      name: 'Sentadilla con barra',
+      primaryMuscle: 'quads',
+      secondaryMuscle: 'glutes',
+      kind: 'weighted',
+      isCompound: true,
+      increment: 2.5,
+      defaultRestSeconds: 150,
+      cues: [],
+      alternativeIds: [],
+    });
+    await addTemplateItem(db, 'pierna-a', id);
+    const workout = await startWorkout(db, 'pierna-a', Date.now());
+    const view = (await loadWorkoutView(db, workout))!;
+    expect(view.exercises.at(-1)!.exercise.name).toBe('Sentadilla con barra');
+    expect(view.exercises.at(-1)!.sets).toHaveLength(3);
+  });
+
+  it('timed exercises step in seconds and are never compound', async () => {
+    const id = await createExercise(db, { ...draft, name: 'Plancha lateral', kind: 'timed', primaryMuscle: 'core', secondaryMuscle: null });
+    expect(await db.exercises.get(id)).toMatchObject({ kind: 'timed', increment: 5, isCompound: false });
+  });
+
+  it('renames an exercise and keeps its history, type and load step', async () => {
+    await updateExerciseIncrement(db, 'hip-thrust', 5);
+    await updateExercise(db, 'hip-thrust', { ...draft, name: 'Hip thrust con barra', primaryMuscle: 'glutes', secondaryMuscle: null });
+    expect(await db.exercises.get('hip-thrust')).toMatchObject({
+      id: 'hip-thrust',
+      name: 'Hip thrust con barra',
+      kind: 'weighted',
+      increment: 5,
+      secondaryMuscle: null,
+    });
+    expect((await db.exercises.get('hip-thrust'))!.cues.length).toBeGreaterThan(0); // untouched
   });
 });

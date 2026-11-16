@@ -93,3 +93,77 @@ for (const [name, size, scale] of targets) {
   writeFileSync(join(OUT, name), render(size, scale));
   console.log(`✓ public/${name} (${size}×${size})`);
 }
+
+// ─── iOS launch screens ─────────────────────────────────────────────────────────
+// iOS shows a blank screen while an installed web app starts unless it finds an
+// apple-touch-startup-image of exactly the device's pixel size. One portrait image per
+// iPhone screen size: dark background, dumbbell in the centre.
+// [CSS width, CSS height, device pixel ratio]
+export const SPLASH_SCREENS = [
+  [440, 956, 3], // 16 / 17 Pro Max
+  [402, 874, 3], // 16 Pro, 17, 17 Pro
+  [420, 912, 3], // Air
+  [430, 932, 3], // 14 Pro Max, 15 / 16 Plus, 15 Pro Max
+  [393, 852, 3], // 14 Pro, 15, 15 Pro, 16
+  [428, 926, 3], // 12 / 13 Pro Max, 14 Plus
+  [390, 844, 3], // 12, 13, 14 (and Pro)
+  [375, 812, 3], // X, XS, 11 Pro, 12 / 13 mini
+  [414, 896, 3], // XS Max, 11 Pro Max
+  [414, 896, 2], // XR, 11
+  [414, 736, 3], // 8 Plus
+  [375, 667, 2], // SE (2nd / 3rd gen), 8
+];
+
+function renderSplash(width, height) {
+  const icon = Math.round(width * 0.34); // dumbbell box, centred
+  const left = Math.round((width - icon) / 2);
+  const top = Math.round((height - icon) / 2);
+  const background = Buffer.alloc(1 + width * 3);
+  for (let x = 0; x < width; x++) background.set(BG, 1 + x * 3);
+
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    if (y < top || y >= top + icon) {
+      rows.push(background); // plain background row, shared
+      continue;
+    }
+    const row = Buffer.from(background);
+    for (let x = left; x < left + icon; x++) {
+      let hits = 0;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const u = (x - left + (sx + 0.5) / SS) / icon;
+          const v = (y - top + (sy + 0.5) / SS) / icon;
+          if (SHAPES.some((shape) => insideRoundRect(u, v, shape))) hits++;
+        }
+      }
+      if (hits === 0) continue;
+      const a = hits / (SS * SS);
+      for (let c = 0; c < 3; c++) row[1 + x * 3 + c] = Math.round(BG[c] * (1 - a) + FG[c] * a);
+    }
+    rows.push(row);
+  }
+  return encodePngRect(width, height, Buffer.concat(rows));
+}
+
+function encodePngRect(width, height, raw) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+mkdirSync(join(OUT, 'splash'), { recursive: true });
+for (const [w, h, dpr] of SPLASH_SCREENS) {
+  const name = `splash/${w * dpr}x${h * dpr}.png`;
+  const png = renderSplash(w * dpr, h * dpr);
+  writeFileSync(join(OUT, name), png);
+  console.log(`✓ public/${name} (${Math.round(png.length / 1024)} kB)`);
+}

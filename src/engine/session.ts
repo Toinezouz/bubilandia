@@ -3,6 +3,7 @@
  * working set, bonus set, light session. Never applied automatically: the UI asks first.
  */
 
+import { estimateE1RM } from './e1rm.ts';
 import type { ExerciseKind, PerformedSet } from './types.ts';
 import { addIncrements, reduceByFraction, roundToIncrement } from './weight.ts';
 
@@ -42,34 +43,54 @@ export function adjustAfterFirstSet(input: {
 
 // ─── Form of the day ─────────────────────────────────────────────────────────────
 
-export interface ReadinessSample {
-  reps: number;
-  rpe: number | null;
-  /** Reps planned for that set (pre-filled target). */
-  targetReps: number;
-  targetRPE: number;
-}
-
 /** Exercises taken into account for the form of the day. */
 export const READINESS_EXERCISES = 2;
 
 /**
- * Average gap between how hard the sets were and how hard they were planned to be, in
- * "reps in reserve" units: (RPE − target RPE) + (target reps − reps). Positive = harder than
- * expected. Missing reps count as much as missing reserve (one rep short ≈ one RPE point).
- * Null without usable samples.
+ * Strength shown by a group of sets, comparable between sessions whatever the load / reps /
+ * RPE mix: the best RPE-adjusted e1RM. Without a load (bodyweight) the same formula is used
+ * with a unit load, so only reps and reserve count. Null for timed exercises or no usable set.
  */
-export function readinessScore(samples: ReadonlyArray<ReadinessSample>): number | null {
-  const usable = samples.filter((s) => s.rpe !== null);
-  if (usable.length === 0) return null;
-  const total = usable.reduce((sum, s) => sum + (s.rpe! - s.targetRPE) + (s.targetReps - s.reps), 0);
-  return total / usable.length;
+export function performanceIndex(kind: ExerciseKind, sets: ReadonlyArray<PerformedSet>): number | null {
+  if (kind === 'timed') return null;
+  let best: number | null = null;
+  for (const s of sets) {
+    if (s.reps <= 0 || s.rpe === null) continue;
+    const load = s.weight !== null && s.weight > 0 ? s.weight : kind === 'bodyweight' ? 1 : null;
+    if (load === null) continue;
+    const value = estimateE1RM(load, s.reps, s.rpe);
+    if (best === null || value > best) best = value;
+  }
+  return best;
 }
 
-/** ≥ +1 → baja, ≤ −1 → alta, otherwise normal. */
+/** One exercise: today's performance index against the last session's. */
+export interface ReadinessSample {
+  today: number;
+  reference: number;
+}
+
+/**
+ * Form of the day: average relative change of today's performance compared with the last
+ * time each exercise was done (0 = same as last time, −0.05 = 5 % weaker). Doing exactly the
+ * same as last time is a normal day, whatever the targets were. Null without samples.
+ */
+export function readinessScore(samples: ReadonlyArray<ReadinessSample>): number | null {
+  const usable = samples.filter((s) => s.reference > 0);
+  if (usable.length === 0) return null;
+  return usable.reduce((sum, s) => sum + (s.today / s.reference - 1), 0) / usable.length;
+}
+
+/**
+ * One rep (or one RPE point) is worth ≈ 2,5 % of e1RM: ±4 % means clearly more than a rep
+ * off, in the same direction, on average.
+ */
+export const READINESS_THRESHOLD = 0.04;
+
+/** ≤ −4 % → baja, ≥ +4 % → alta, otherwise normal. */
 export function readinessLevel(score: number): Readiness {
-  if (score >= 1) return 'low';
-  if (score <= -1) return 'high';
+  if (score <= -READINESS_THRESHOLD) return 'low';
+  if (score >= READINESS_THRESHOLD) return 'high';
   return 'normal';
 }
 

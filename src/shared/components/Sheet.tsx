@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { lockScroll } from '../scrollLock.ts';
 import styles from './components.module.css';
 
 interface SheetProps {
@@ -10,12 +11,22 @@ interface SheetProps {
 
 /** Bottom sheet: thumb-reachable, closes on backdrop tap or Escape. */
 export function Sheet({ open, onClose, title, children }: SheetProps) {
+  // Parents pass a new onClose on every render (the workout screen re-renders every second
+  // while the rest timer runs): keep it in a ref so the effects below only follow `open`.
+  const close = useRef(onClose);
+  close.current = onClose;
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    // The page behind must not scroll while the sheet is open.
+    const unlock = lockScroll();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      unlock();
+    };
+  }, [open]);
 
   if (!open) return null;
   return (

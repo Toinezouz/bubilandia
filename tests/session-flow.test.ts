@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppDatabase } from '../src/db/database.ts';
+import { loadHomeData } from '../src/db/home.ts';
 import { loadWorkoutSummary } from '../src/db/summary.ts';
 import { SETTINGS_ID } from '../src/db/types.ts';
 import {
@@ -10,6 +11,7 @@ import {
   finishWorkout,
   lastPerformance,
   loadWorkoutView,
+  startDeload,
   startWorkout,
   swapExercise,
   toggleWarmupDone,
@@ -166,5 +168,86 @@ describe('exercise sheet', () => {
   it('saves machine settings', async () => {
     await updateExerciseInfo(db, 'seated-leg-press', { machineSettings: 'asiento 4, respaldo 2' });
     expect((await db.exercises.get('seated-leg-press'))?.machineSettings).toBe('asiento 4, respaldo 2');
+  });
+});
+
+describe('audit fixes (0.3.1)', () => {
+  it('a session finished without any set is discarded and does not move the rotation', async () => {
+    const id = await startWorkout(db, 'pierna-a', T0);
+    expect(await finishWorkout(db, id, T0 + 60_000)).toBe('discarded');
+    expect((await db.workouts.get(id))?.status).toBe('abandoned');
+    const home = await loadHomeData(db, T0 + 120_000);
+    expect(home.nextTemplateId).toBe('pierna-a');
+    expect(home.last7Days.sessions).toBe(0);
+    expect(home.backupReminder).toBe(false);
+  });
+
+  it('warm-up sets alone do not make a session', async () => {
+    await history();
+    const id = await startWorkout(db, 'pierna-a', T0 + 3 * DAY);
+    const warmup = (await loadWorkoutView(db, id))!.exercises[0]!.sets.find((s) => s.isWarmup)!;
+    await toggleWarmupDone(db, warmup.id, T0 + 3 * DAY);
+    expect(await finishWorkout(db, id, T0 + 3 * DAY + 60_000)).toBe('discarded');
+  });
+
+  it('a discarded deload session does not use up the deload week', async () => {
+    await startDeload(db);
+    const id = await startWorkout(db, 'pierna-a', T0);
+    await finishWorkout(db, id, T0 + 60_000);
+    expect((await db.settings.get(SETTINGS_ID))?.deloadRemaining).toBe(4);
+  });
+
+  it('a light session does not lower the next suggestion', async () => {
+    await history(); // hip thrust 3 × 10 @ 40 → next: 42,5
+    const bad = await startWorkout(db, 'pierna-a', T0 + 3 * DAY);
+    const [first] = await working(bad, 0);
+    await updateSetValues(db, first!.id, { reps: 5 });
+    await completeSet(db, first!.id, 10, T0 + 3 * DAY);
+    await answerLightSession(db, bad, true);
+    for (const s of (await working(bad, 0)).slice(1)) await completeSet(db, s.id, 8, T0 + 3 * DAY);
+    expect(await finishWorkout(db, bad, T0 + 3 * DAY + 3_600_000)).toBe('saved');
+
+    // The bad day is in the history but the progression continues from the last normal session.
+    expect((await lastPerformance(db, 'hip-thrust'))?.sets.map((s) => s.weight)).toEqual([40, 40, 40]);
+    const next = await startWorkout(db, 'pierna-a', T0 + 6 * DAY);
+    expect((await working(next, 0)).map((s) => s.weight)).toEqual([42.5, 42.5, 42.5]);
+  });
+
+  it('the −10 % session after a break does not lower the next one either', async () => {
+    await history();
+    const back = await startWorkout(db, 'pierna-a', T0 + 20 * DAY, { reduceLoads: true });
+    expect((await db.workouts.get(back))?.reducedLoads).toBe(true);
+    for (const s of await working(back, 0)) await completeSet(db, s.id, 7, T0 + 20 * DAY);
+    await finishWorkout(db, back, T0 + 20 * DAY + 3_600_000);
+    const next = await startWorkout(db, 'pierna-a', T0 + 23 * DAY);
+    expect((await working(next, 0))[0]!.weight).toBe(42.5);
+  });
+
+  it('swapping an exercise keeps the −10 % of a deload or return session', async () => {
+    // Prensa sentada 3 × 10 @ 100 → next 100; deload → 90.
+    const first = await startWorkout(db, 'pierna-a', T0);
+    for (const s of await working(first, 1)) {
+      await updateSetValues(db, s.id, { weight: 100, reps: 10 });
+      await completeSet(db, s.id, 8, T0);
+    }
+    await finishWorkout(db, first, T0 + 3_600_000);
+
+    await startDeload(db);
+    const deload = await startWorkout(db, 'pierna-a', T0 + 3 * DAY);
+    const pe = (await loadWorkoutView(db, deload))!.exercises[1]!.performed;
+    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([90, 90]);
+    await swapExercise(db, pe.id, 'leg-press-45');
+    await swapExercise(db, pe.id, 'seated-leg-press');
+    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([90, 90]);
+  });
+
+  it('ignores a set saved with 0 reps in the history', async () => {
+    const id = await startWorkout(db, 'pierna-a', T0);
+    const [a, b] = await working(id, 0);
+    await updateSetValues(db, a!.id, { weight: 40, reps: 10 });
+    await completeSet(db, a!.id, 8, T0);
+    await db.sets.update(b!.id, { weight: 40, reps: 0, rpe: 8, completedAt: T0 }); // legacy bad row
+    await finishWorkout(db, id, T0 + 3_600_000);
+    expect((await lastPerformance(db, 'hip-thrust'))?.sets).toEqual([{ weight: 40, reps: 10, rpe: 8 }]);
   });
 });

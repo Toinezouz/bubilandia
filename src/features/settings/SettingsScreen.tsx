@@ -7,6 +7,7 @@ import { ConfirmSheet } from '../../shared/components/Sheet.tsx';
 import ui from '../../shared/components/components.module.css';
 import { formatDate, formatLongDate } from '../../shared/format.ts';
 import { makeJsonFile, shareOrDownload } from '../../shared/share.ts';
+import { WeeklyTargets } from './WeeklyTargets.tsx';
 import styles from './settings.module.css';
 
 interface SettingsScreenProps {
@@ -126,6 +127,8 @@ export function SettingsScreen({ onBack, onOpenProgram }: SettingsScreenProps) {
           </div>
         </div>
       </section>
+
+      <WeeklyTargets settings={settings} />
 
       <section className={styles.section} aria-labelledby="workout-title">
         <h2 id="workout-title">Entreno</h2>

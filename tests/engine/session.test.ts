@@ -3,6 +3,7 @@ import {
   adjustAfterFirstSet,
   bonusSetAllowed,
   lightSessionWeight,
+  performanceIndex,
   readinessLevel,
   readinessScore,
   shouldOfferLightSession,
@@ -38,22 +39,52 @@ describe('adjustAfterFirstSet (§7.5)', () => {
 });
 
 describe('form of the day', () => {
-  const s = (rpe: number | null, reps: number, targetReps = 10) => ({ rpe, reps, targetReps, targetRPE: 8 });
+  const sets = (weight: number | null, reps: number[], rpe: number) => reps.map((r) => ({ weight, reps: r, rpe }));
+  /** Form after doing `today` when the last session was `last`. */
+  const form = (last: ReturnType<typeof sets>, today: ReturnType<typeof sets>, kind: 'weighted' | 'bodyweight' = 'weighted') =>
+    readinessLevel(readinessScore([{ today: performanceIndex(kind, today)!, reference: performanceIndex(kind, last)! }])!);
 
-  it('measures the gap with the plan in reps-in-reserve units', () => {
-    expect(readinessScore([s(8, 10), s(8, 10)])).toBe(0);
-    expect(readinessScore([s(9.5, 9), s(9, 10)])).toBe(1.75); // (1.5 + 1 + 1) / 2
-    expect(readinessScore([s(6.5, 11), s(7, 10)])).toBe(-1.75); // (−1.5 − 1 − 1) / 2
-    expect(readinessScore([s(null, 10)])).toBeNull();
-    expect(readinessScore([])).toBeNull();
+  it('repeating the last session is a normal day (not "baja")', () => {
+    const last = sets(50, [10, 9, 8], 8);
+    expect(form(last, sets(50, [10, 9, 8], 8))).toBe('normal');
+    expect(form(last, sets(50, [10], 8))).toBe('normal'); // same first set, rest not done yet
+    expect(form(last, sets(50, [9], 8))).toBe('normal'); // one rep less: within the noise
+    expect(form(last, sets(50, [10], 9))).toBe('normal'); // one RPE point harder: within the noise
   });
 
-  it('turns the score into alta / normal / baja', () => {
-    expect(readinessLevel(1.75)).toBe('low');
-    expect(readinessLevel(1)).toBe('low');
-    expect(readinessLevel(0.5)).toBe('normal');
-    expect(readinessLevel(-0.9)).toBe('normal');
-    expect(readinessLevel(-1)).toBe('high');
+  it('clearly weaker → baja, clearly stronger → alta', () => {
+    const last = sets(50, [10, 9, 8], 8);
+    expect(form(last, sets(50, [9], 9.5))).toBe('low'); // one rep less and much harder
+    expect(form(last, sets(50, [7], 10))).toBe('low');
+    expect(form(last, sets(50, [11], 7))).toBe('high'); // one rep more and easier
+    expect(form(last, sets(52.5, [10], 8))).toBe('high'); // heavier, same reps and RPE
+  });
+
+  it('is independent of the load chosen today', () => {
+    // 47,5 × 11 @ 8 (e1RM 68,1) is about as strong as 50 × 10 @ 8 (e1RM 70): choosing a
+    // slightly lighter load for one more rep is not a bad day.
+    expect(form(sets(50, [10], 8), sets(47.5, [11], 8))).toBe('normal');
+  });
+
+  it('works without load (bodyweight) from reps and reserve', () => {
+    expect(form(sets(null, [12], 8), sets(null, [12], 8), 'bodyweight')).toBe('normal');
+    expect(form(sets(null, [12], 8), sets(null, [9], 9.5), 'bodyweight')).toBe('low');
+  });
+
+  it('averages the exercises and needs data', () => {
+    expect(readinessScore([{ today: 95, reference: 100 }, { today: 105, reference: 100 }])).toBeCloseTo(0, 10);
+    expect(readinessScore([])).toBeNull();
+    expect(performanceIndex('timed', [{ weight: null, reps: 45, rpe: 8 }])).toBeNull();
+    expect(performanceIndex('weighted', [{ weight: null, reps: 10, rpe: 8 }])).toBeNull();
+    expect(performanceIndex('weighted', [{ weight: 50, reps: 10, rpe: null }])).toBeNull();
+  });
+
+  it('turns the score into alta / normal / baja at ±4 %', () => {
+    expect(readinessLevel(-0.05)).toBe('low');
+    expect(readinessLevel(-0.04)).toBe('low');
+    expect(readinessLevel(-0.03)).toBe('normal');
+    expect(readinessLevel(0.03)).toBe('normal');
+    expect(readinessLevel(0.04)).toBe('high');
   });
 
   it('offers the light session once, after two exercises with a low form', () => {

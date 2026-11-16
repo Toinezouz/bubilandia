@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { formatNumber, parseDecimal } from '../format.ts';
 import { toHundredths } from '../../engine/weight.ts';
+import { createRepeatPress } from '../repeatPress.ts';
 import styles from './components.module.css';
 
 interface StepperProps {
@@ -15,16 +16,15 @@ interface StepperProps {
   onChange: (value: number | null) => void;
 }
 
-const REPEAT_DELAY_MS = 400;
-const REPEAT_EVERY_MS = 75;
-
-/** − [value] + with long-press auto-repeat and keyboard entry (16px+ font, decimal keypad). */
+/**
+ * − [value] + with keyboard entry (16px+ font, decimal keypad). A tap steps once on release,
+ * holding a button repeats fast, and scrolling from a button changes nothing (see repeatPress).
+ */
 export function Stepper({ label, value, step, min = 0, allowEmpty = false, decimal = false, unit, onChange }: StepperProps) {
   const [current, setCurrent] = useState<number | null>(value);
   const [text, setText] = useState(value === null ? '' : formatNumber(value));
   const [editing, setEditing] = useState(false);
   const currentRef = useRef(current);
-  const timers = useRef<{ delay?: number; repeat?: number }>({});
 
   // Follow external changes (e.g. accepted suggestion) unless she is typing.
   useEffect(() => {
@@ -56,30 +56,32 @@ export function Stepper({ label, value, step, min = 0, allowEmpty = false, decim
     apply(next);
   };
 
-  const stop = () => {
-    window.clearTimeout(timers.current.delay);
-    window.clearInterval(timers.current.repeat);
-  };
-  useEffect(() => stop, []);
-
-  const pressProps = (direction: 1 | -1) => ({
-    onPointerDown: (e: PointerEvent) => {
-      e.preventDefault();
-      bump(direction);
-      stop();
-      timers.current.delay = window.setTimeout(() => {
-        timers.current.repeat = window.setInterval(() => bump(direction), REPEAT_EVERY_MS);
-      }, REPEAT_DELAY_MS);
-    },
-    onPointerUp: stop,
-    onPointerLeave: stop,
-    onPointerCancel: stop,
-    // Keyboard / assistive activation (pointer clicks are handled on pointerdown).
-    onClick: (e: MouseEvent) => {
-      if (e.detail === 0) bump(direction);
-    },
-    onContextMenu: (e: MouseEvent) => e.preventDefault(),
+  // The press controllers live for the whole component; they always call the latest `bump`.
+  const bumpRef = useRef(bump);
+  bumpRef.current = bump;
+  const presses = useRef({
+    minus: createRepeatPress(() => bumpRef.current(-1)),
+    plus: createRepeatPress(() => bumpRef.current(1)),
   });
+  useEffect(() => {
+    const { minus, plus } = presses.current;
+    return () => {
+      minus.stop();
+      plus.stop();
+    };
+  }, []);
+
+  const pressProps = (direction: 1 | -1) => {
+    const press = direction === 1 ? presses.current.plus : presses.current.minus;
+    return {
+      onPointerDown: press.down,
+      onPointerUp: press.stop,
+      onPointerLeave: press.stop,
+      onPointerCancel: press.stop,
+      onClick: press.click,
+      onContextMenu: (e: MouseEvent) => e.preventDefault(),
+    };
+  };
 
   const commitText = () => {
     setEditing(false);
@@ -89,7 +91,13 @@ export function Stepper({ label, value, step, min = 0, allowEmpty = false, decim
       else setText(current === null ? '' : formatNumber(current));
       return;
     }
-    apply(decimal ? parsed : Math.round(parsed));
+    const next = decimal ? parsed : Math.round(parsed);
+    // Typed values below what the buttons allow are refused (0 reps, 0 kg, 0 sets…).
+    if (decimal ? next <= 0 : next < min) {
+      setText(current === null ? '' : formatNumber(current));
+      return;
+    }
+    apply(next);
   };
 
   return (

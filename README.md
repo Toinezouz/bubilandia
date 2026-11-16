@@ -49,9 +49,9 @@ git push --follow-tags
 `npm version patch` augmente la version (affichée dans *Ajustes*) et crée le commit + le tag ;
 le push déclenche le déploiement (≈ 1-2 min, visible dans l'onglet *Actions*).
 
-Sur l'iPhone, la nouvelle version s'installe d'elle-même mais n'est **jamais** appliquée en pleine
-séance. Jusqu'au bandeau « Nueva versión disponible » (phase 2), elle est prise en compte quand l'app
-est complètement fermée (balayer vers le haut dans le sélecteur d'apps) puis rouverte.
+Sur l'iPhone, la nouvelle version se télécharge d'elle-même mais n'est **jamais** appliquée en pleine
+séance : l'accueil affiche le bandeau « Nueva versión disponible – Actualizar ». Elle est aussi prise
+en compte quand l'app est complètement fermée puis rouverte.
 
 ## Documents
 

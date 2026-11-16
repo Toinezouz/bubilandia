@@ -3,8 +3,9 @@
  * Template items always keep a contiguous `order` 0..n-1.
  */
 
+import { newId } from '../shared/id.ts';
 import type { AppDatabase } from './database.ts';
-import type { Exercise, TemplateItem } from './types.ts';
+import type { Exercise, ExerciseKind, Muscle, TemplateItem } from './types.ts';
 
 const renumber = (items: TemplateItem[]): TemplateItem[] =>
   [...items].sort((a, b) => a.order - b.order).map((item, order) => ({ ...item, order }));
@@ -83,4 +84,65 @@ export async function updateExerciseIncrement(db: AppDatabase, exerciseId: strin
   const step = Math.round(increment * 100) / 100;
   if (!(step > 0)) return;
   await db.exercises.update(exerciseId, { increment: step });
+}
+
+// ─── Custom exercises ───────────────────────────────────────────────────────────
+
+/** What she can set when creating or editing an exercise. */
+export interface ExerciseDraft {
+  name: string;
+  primaryMuscle: Muscle;
+  secondaryMuscle: Muscle | null;
+  kind: ExerciseKind;
+  isUnilateral: boolean;
+  isCompound: boolean;
+  defaultRestSeconds: number;
+}
+
+/** Spanish error message, or null when the draft is valid. */
+export function validateExerciseDraft(draft: ExerciseDraft, existingNames: ReadonlyArray<string>): string | null {
+  const name = draft.name.trim();
+  if (name.length < 2) return 'Escribe un nombre para el ejercicio.';
+  if (name.length > 60) return 'El nombre es demasiado largo (máx. 60 caracteres).';
+  if (existingNames.some((n) => n.trim().toLocaleLowerCase('es') === name.toLocaleLowerCase('es'))) {
+    return 'Ya existe un ejercicio con ese nombre.';
+  }
+  if (draft.secondaryMuscle === draft.primaryMuscle) return 'El músculo secundario debe ser distinto del principal.';
+  return null;
+}
+
+/** New exercise with sensible defaults (load step 2,5 kg, or 5 s for timed ones). */
+export async function createExercise(db: AppDatabase, draft: ExerciseDraft): Promise<string> {
+  const id = newId();
+  await db.exercises.add({
+    id,
+    name: draft.name.trim(),
+    primaryMuscle: draft.primaryMuscle,
+    secondaryMuscle: draft.secondaryMuscle,
+    kind: draft.kind,
+    isUnilateral: draft.isUnilateral,
+    isCompound: draft.kind === 'timed' ? false : draft.isCompound,
+    increment: draft.kind === 'timed' ? 5 : 2.5,
+    defaultRestSeconds: Math.min(600, Math.max(0, Math.round(draft.defaultRestSeconds))),
+    cues: [],
+    machineSettings: '',
+    alternativeIds: [],
+    notes: '',
+  });
+  return id;
+}
+
+/**
+ * Edits an exercise. Its type (load / bodyweight / time) cannot change afterwards: the
+ * history would no longer mean the same thing.
+ */
+export async function updateExercise(db: AppDatabase, exerciseId: string, draft: Omit<ExerciseDraft, 'kind'>): Promise<void> {
+  await db.exercises.update(exerciseId, {
+    name: draft.name.trim(),
+    primaryMuscle: draft.primaryMuscle,
+    secondaryMuscle: draft.secondaryMuscle,
+    isUnilateral: draft.isUnilateral,
+    isCompound: draft.isCompound,
+    defaultRestSeconds: Math.min(600, Math.max(0, Math.round(draft.defaultRestSeconds))),
+  });
 }

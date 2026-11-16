@@ -7,6 +7,7 @@ import { MUSCLES, MUSCLE_LABELS, SETTINGS_ID, type Muscle } from '../../db/types
 import { volumeStatus } from '../../engine/index.ts';
 import { Chart } from '../../shared/components/Chart.tsx';
 import { formatDate, formatDuration, formatNumber, formatTime, formatVolume } from '../../shared/format.ts';
+import { useNow } from '../../shared/useNow.ts';
 import styles from './history.module.css';
 
 export type HistoryTab = 'sessions' | 'exercises' | 'volume';
@@ -112,9 +113,10 @@ const weekLabel = (ms: number) => new Date(ms).toLocaleDateString('es-ES', { day
 
 function Volume() {
   const [muscle, setMuscle] = useState<Muscle>('glutes');
+  const now = useNow();
   const data = useLiveQuery(
-    async () => ({ weeks: await loadWeeklyVolume(db, Date.now(), 8), settings: await db.settings.get(SETTINGS_ID) }),
-    [],
+    async () => ({ weeks: await loadWeeklyVolume(db, now, 8), settings: await db.settings.get(SETTINGS_ID) }),
+    [now],
   );
   if (!data) return null;
   const { weeks, settings } = data;

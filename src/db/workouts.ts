@@ -32,14 +32,23 @@ export async function getActiveWorkout(db: AppDatabase): Promise<Workout | undef
   return db.workouts.where('status').equals('in_progress').first();
 }
 
+/**
+ * Sessions done on purpose with lighter loads say nothing about her real level: deload weeks,
+ * light sessions accepted on a bad day and the −10 % session after a break are all ignored by
+ * the progression (next suggestion, form of the day, stagnation). They stay in the history.
+ */
+export function countsForProgression(workout: Workout): boolean {
+  return workout.status === 'done' && !workout.isDeload && !workout.lightSession && !workout.reducedLoads;
+}
+
 export interface LastPerformance {
   workout: Workout;
   sets: PerformedSet[];
 }
 
 /**
- * Working sets from the most recent completed, non-deload workout where this exercise was
- * actually done (not skipped, at least one completed set). Null if there is none.
+ * Working sets from the most recent completed workout that counts for progression, where
+ * this exercise was actually done (not skipped, at least one completed set). Null if none.
  */
 export async function lastPerformance(
   db: AppDatabase,
@@ -54,8 +63,7 @@ export async function lastPerformance(
     .filter(
       (c): c is { pe: PerformedExercise; workout: Workout } =>
         !!c.workout &&
-        c.workout.status === 'done' &&
-        !c.workout.isDeload &&
+        countsForProgression(c.workout) &&
         !c.pe.skipped &&
         c.workout.id !== excludeWorkoutId,
     )
@@ -63,7 +71,7 @@ export async function lastPerformance(
 
   for (const { pe, workout } of candidates) {
     const sets = (await db.sets.where('performedExerciseId').equals(pe.id).sortBy('index'))
-      .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null)
+      .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null && s.reps > 0)
       .map((s) => ({ weight: s.weight, reps: s.reps!, rpe: s.rpe }));
     if (sets.length > 0) return { workout, sets };
   }
@@ -127,6 +135,7 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
       isDeload: deload,
       status: 'in_progress',
       activeRest: null,
+      ...(options.reduceLoads && !deload ? { reducedLoads: true } : {}),
     };
     await db.workouts.add(workout);
 
@@ -280,7 +289,15 @@ export async function swapExercise(db: AppDatabase, performedExerciseId: string,
 
     await db.sets.bulkDelete(sets.map((s) => s.id));
     await db.sets.bulkAdd(
-      buildSets(pe.id, exercise, suggestion, workingCount, hadWarmup && exercise.isCompound, workout?.lightSession === true),
+      // Keep the −10 % of the session (light session, deload week, return after a break).
+      buildSets(
+        pe.id,
+        exercise,
+        suggestion,
+        workingCount,
+        hadWarmup && exercise.isCompound,
+        !!workout && (workout.lightSession === true || workout.isDeload || workout.reducedLoads === true),
+      ),
     );
     await db.performedExercises.update(pe.id, { exerciseId: exercise.id, formCheckAnswered: false });
   });
@@ -367,22 +384,31 @@ export async function setExerciseNote(db: AppDatabase, performedExerciseId: stri
   await db.performedExercises.update(performedExerciseId, { note });
 }
 
-/** Ends the workout; sets never marked "Hecho" are dropped so they never count anywhere. */
-export async function finishWorkout(db: AppDatabase, workoutId: string, now: number, notes?: string): Promise<void> {
-  await db.transaction('rw', [db.workouts, db.performedExercises, db.sets, db.settings], async () => {
+/**
+ * Ends the workout; sets never marked "Hecho" are dropped so they never count anywhere.
+ * A session without a single completed working set is not a session: it is discarded
+ * (status 'abandoned'), so it does not move the rotation, the weekly count or the deload week.
+ * @returns 'saved' or 'discarded'
+ */
+export async function finishWorkout(db: AppDatabase, workoutId: string, now: number, notes?: string): Promise<'saved' | 'discarded'> {
+  return db.transaction('rw', [db.workouts, db.performedExercises, db.sets, db.settings], async () => {
     const workout = await db.workouts.get(workoutId);
-    if (workout?.isDeload && workout.status === 'in_progress') {
+    const peIds = await db.performedExercises.where('workoutId').equals(workoutId).primaryKeys();
+    await db.sets.where('performedExerciseId').anyOf(peIds).filter((s) => s.completedAt === null).delete();
+    const done = await db.sets.where('performedExerciseId').anyOf(peIds).filter((s) => !s.isWarmup).count();
+    const saved = done > 0;
+
+    if (saved && workout?.isDeload && workout.status === 'in_progress') {
       const settings = await db.settings.get(SETTINGS_ID);
       await db.settings.update(SETTINGS_ID, { deloadRemaining: Math.max(0, (settings?.deloadRemaining ?? 0) - 1) });
     }
-    const peIds = await db.performedExercises.where('workoutId').equals(workoutId).primaryKeys();
-    await db.sets.where('performedExerciseId').anyOf(peIds).filter((s) => s.completedAt === null).delete();
     await db.workouts.update(workoutId, {
-      status: 'done',
+      status: saved ? 'done' : 'abandoned',
       endedAt: now,
       activeRest: null,
       ...(notes !== undefined ? { notes } : {}),
     });
+    return saved ? 'saved' : 'discarded';
   });
 }
 

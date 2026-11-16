@@ -15,8 +15,28 @@ const shortDate = (ms: number) => new Date(ms).toLocaleDateString('es-ES', { day
 
 /** Progress sheet of one exercise (§6.4): e1RM curve, volume, records, full history. */
 export function ExerciseProgressScreen({ exerciseId, onBack }: ExerciseProgressScreenProps) {
+  const exercise = useLiveQuery(() => db.exercises.get(exerciseId), [exerciseId]);
+  return (
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <button type="button" className={styles.back} onClick={onBack}>
+          ‹ Progreso
+        </button>
+        <h1 className={styles.title}>{exercise?.name ?? ''}</h1>
+      </header>
+      <ExerciseProgressContent exerciseId={exerciseId} />
+    </main>
+  );
+}
+
+/**
+ * The progress content itself, without page chrome: also shown inside the exercise sheet
+ * during a workout, so she can look at her curve without leaving the session (the rest
+ * timer keeps running underneath).
+ */
+export function ExerciseProgressContent({ exerciseId }: { exerciseId: string }) {
   const p = useLiveQuery(() => loadExerciseProgress(db, exerciseId), [exerciseId]);
-  if (p === undefined) return <main className={styles.page} aria-busy="true" />;
+  if (p === undefined) return <p className={styles.meta}>Cargando…</p>;
   if (p === null) return null;
 
   const { exercise, sessions } = p;
@@ -30,17 +50,11 @@ export function ExerciseProgressScreen({ exerciseId, onBack }: ExerciseProgressS
   const formatMain = weighted ? (v: number) => formatKg(Math.round(v * 10) / 10) : exercise.kind === 'timed' ? (v: number) => `${v} s` : (v: number) => `${v} reps`;
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <button type="button" className={styles.back} onClick={onBack}>
-          ‹ Progreso
-        </button>
-        <h1 className={styles.title}>{exercise.name}</h1>
-        <p className={styles.meta}>
-          {sessions.length} {sessions.length === 1 ? 'sesión' : 'sesiones'}
-          {sessions.length > 0 && ` · desde el ${formatDate(sessions[0]!.at)}`}
-        </p>
-      </header>
+    <>
+      <p className={styles.meta}>
+        {sessions.length} {sessions.length === 1 ? 'sesión' : 'sesiones'}
+        {sessions.length > 0 && ` · desde el ${formatDate(sessions[0]!.at)}`}
+      </p>
 
       {p.stagnating && (
         <p className={styles.advice} role="status">
@@ -115,6 +129,7 @@ export function ExerciseProgressScreen({ exerciseId, onBack }: ExerciseProgressS
                 <span className={styles.meta}>
                   {formatDate(s.at)}
                   {s.isDeload && ' · descarga'}
+                  {s.isLight && ' · ligera'}
                 </span>
                 <span>{formatPerformance(s.sets, exercise.kind)}</span>
               </li>
@@ -122,6 +137,6 @@ export function ExerciseProgressScreen({ exerciseId, onBack }: ExerciseProgressS
           </ul>
         </section>
       )}
-    </main>
+    </>
   );
 }

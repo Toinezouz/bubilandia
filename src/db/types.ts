@@ -109,6 +109,8 @@ export interface Workout {
   status: WorkoutStatus;
   /** Light session accepted (§7.5): remaining loads −10 %, no bonus set. */
   lightSession?: boolean;
+  /** Started at −10 % after a break of 10+ days (§7.6). */
+  reducedLoads?: boolean;
   /** The light-session question was already asked (it is asked only once). */
   lightSessionOffered?: boolean;
   /** Running rest timer, persisted so it survives a reload / app kill. */

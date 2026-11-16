@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useRef } from 'react';
 import { db } from '../../db/database.ts';
 import { loadHomeData, type HomeData } from '../../db/home.ts';
 import { endDeload, snoozeDeload, startDeload } from '../../db/workouts.ts';
@@ -6,6 +7,7 @@ import { MUSCLES, MUSCLE_LABELS, SETTINGS_ID, type SessionTemplate } from '../..
 import { formatDaysAgo, volumeStatus } from '../../engine/index.ts';
 import { formatNumber } from '../../shared/format.ts';
 import { installUpdate, usePwaUpdateAvailable } from '../../shared/pwaUpdate.ts';
+import { useNow } from '../../shared/useNow.ts';
 import styles from './home.module.css';
 
 interface HomeScreenProps {
@@ -16,11 +18,17 @@ interface HomeScreenProps {
 }
 
 export function HomeScreen({ onStart, onResume, onHistory, onSettings }: HomeScreenProps) {
-  const data = useLiveQuery(() => loadHomeData(db, Date.now()), []);
+  // Refreshed when the app comes back to the foreground: "hoy / hace X días", the 7-day
+  // summary and the reminders must not stay frozen at the time the app was first opened.
+  const now = useNow();
+  const fresh = useLiveQuery(() => loadHomeData(db, now), [now]);
+  // Keep showing the previous data while a refresh is loading (no blank flash).
+  const lastData = useRef(fresh);
+  if (fresh) lastData.current = fresh;
+  const data = fresh ?? lastData.current;
   const updateAvailable = usePwaUpdateAvailable();
   if (!data) return <main className={styles.page} aria-busy="true" />;
 
-  const now = Date.now();
   const next = data.templates.find((t) => t.id === data.nextTemplateId);
   const others = data.templates.filter((t) => t.id !== data.nextTemplateId);
   const activeTemplate = data.templates.find((t) => t.id === data.activeWorkout?.templateId);

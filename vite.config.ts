@@ -42,6 +42,8 @@ export default defineConfig({
       workbox: {
         // Offline first: every built asset is precached, SPA navigations fall back to index.html.
         globPatterns: ['**/*.{js,css,html,png,svg,ico,webmanifest,woff2}'],
+        // Launch screens are read by iOS when the app is installed, never by the app itself.
+        globIgnores: ['**/splash/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
       },
@@ -52,7 +54,7 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     environment: 'node',
   },
 });
