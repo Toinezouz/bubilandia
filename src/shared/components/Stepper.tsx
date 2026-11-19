@@ -20,15 +20,26 @@ interface StepperProps {
  * − [value] + with keyboard entry (16px+ font, decimal keypad). A tap steps once on release,
  * holding a button repeats fast, and scrolling from a button changes nothing (see repeatPress).
  */
+/** How long a local change wins over values coming back from the database. */
+const PENDING_MS = 1500;
+
 export function Stepper({ label, value, step, min = 0, allowEmpty = false, decimal = false, unit, onChange }: StepperProps) {
   const [current, setCurrent] = useState<number | null>(value);
   const [text, setText] = useState(value === null ? '' : formatNumber(value));
   const [editing, setEditing] = useState(false);
   const currentRef = useRef(current);
+  // Value she just set, until the saved value comes back from the database. A screen update
+  // carrying an older value in between must not undo her tap (slow phones, quick taps).
+  const pending = useRef<{ value: number | null; until: number } | null>(null);
 
   // Follow external changes (e.g. accepted suggestion) unless she is typing.
   useEffect(() => {
     if (editing) return;
+    const p = pending.current;
+    if (p) {
+      if (value === p.value || Date.now() > p.until) pending.current = null;
+      else return; // stale value from before her last change: keep what she sees
+    }
     currentRef.current = value;
     setCurrent(value);
     setText(value === null ? '' : formatNumber(value));
@@ -36,6 +47,7 @@ export function Stepper({ label, value, step, min = 0, allowEmpty = false, decim
 
   const apply = (next: number | null) => {
     currentRef.current = next;
+    pending.current = { value: next, until: Date.now() + PENDING_MS };
     setCurrent(next);
     setText(next === null ? '' : formatNumber(next));
     onChange(next);

@@ -125,15 +125,23 @@ describe('− / + buttons', () => {
     const reps = () => (screen.getByLabelText('repeticiones') as HTMLInputElement).value;
     expect(reps()).toBe('8');
 
+    // Wait for the screen (and the saved value) rather than reading it at the same instant:
+    // the CI machine is slower, and the value must hold once the database answers.
     fireEvent.click(button('Más repeticiones'));
-    expect(reps()).toBe('9');
+    await waitFor(() => expect(reps()).toBe('9'));
     fireEvent.click(button('Menos repeticiones'));
     fireEvent.click(button('Menos repeticiones'));
-    expect(reps()).toBe('7');
+    await waitFor(() => expect(reps()).toBe('7'));
+    // …and is saved.
+    await waitFor(async () => {
+      const set = (await db.sets.toArray()).find((s) => !s.isWarmup && s.index === 0 && s.completedAt === null);
+      expect(set?.reps).toBe(7);
+    });
 
     // Finger lands on "+" and the page starts scrolling: the browser cancels the pointer.
     fireEvent.pointerDown(button('Más repeticiones'));
     fireEvent.pointerCancel(button('Más repeticiones'));
+    await new Promise((r) => setTimeout(r, 600)); // longer than the hold delay
     expect(reps()).toBe('7');
   });
 
