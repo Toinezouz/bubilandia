@@ -134,7 +134,11 @@ describe('− / + buttons', () => {
     await waitFor(() => expect(reps()).toBe('7'));
     // …and is saved.
     await waitFor(async () => {
-      const set = (await db.sets.toArray()).find((s) => !s.isWarmup && s.index === 0 && s.completedAt === null);
+      // The Hip thrust row precisely: the other exercises have a first set too (in random id order).
+      const hipThrust = await db.performedExercises.where('exerciseId').equals('hip-thrust').first();
+      const set = (await db.sets.where('performedExerciseId').equals(hipThrust?.id ?? '').toArray()).find(
+        (s) => !s.isWarmup && s.index === 0,
+      );
       expect(set?.reps).toBe(7);
     });
 
