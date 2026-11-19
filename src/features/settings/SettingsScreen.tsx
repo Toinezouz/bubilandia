@@ -7,6 +7,7 @@ import { ConfirmSheet } from '../../shared/components/Sheet.tsx';
 import ui from '../../shared/components/components.module.css';
 import { formatDate, formatLongDate } from '../../shared/format.ts';
 import { makeJsonFile, shareOrDownload } from '../../shared/share.ts';
+import { DEFAULT_TARGET_RPE } from '../../engine/index.ts';
 import { WeeklyTargets } from './WeeklyTargets.tsx';
 import styles from './settings.module.css';
 
@@ -110,15 +111,18 @@ export function SettingsScreen({ onBack, onOpenProgram }: SettingsScreenProps) {
           </button>
         ))}
         <div className={styles.row}>
-          <span className={styles.rowLabel}>RPE objetivo (reps en reserva = 10 − RPE)</span>
+          <span className={styles.rowLabel}>
+            Esfuerzo objetivo al final de cada serie (RPE)
+            <span className={styles.hintSmall}>9 = cerca del fallo (te queda 1) · 10 = fallo. Sigues anotando el RPE real.</span>
+          </span>
           <div className={styles.choiceRow} role="radiogroup" aria-label="RPE objetivo">
-            {[7, 7.5, 8, 8.5, 9].map((rpe) => (
+            {[8, 8.5, 9, 9.5, 10].map((rpe) => (
               <button
                 key={rpe}
                 type="button"
                 role="radio"
-                aria-checked={(settings?.targetRPE ?? 8) === rpe}
-                className={`${styles.choice} ${(settings?.targetRPE ?? 8) === rpe ? styles.choiceOn : ''}`}
+                aria-checked={(settings?.targetRPE ?? DEFAULT_TARGET_RPE) === rpe}
+                className={`${styles.choice} ${(settings?.targetRPE ?? DEFAULT_TARGET_RPE) === rpe ? styles.choiceOn : ''}`}
                 onClick={() => void db.settings.update(SETTINGS_ID, { targetRPE: rpe })}
               >
                 {String(rpe).replace('.', ',')}

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { db } from '../../db/database.ts';
 import { MUSCLES, MUSCLE_LABELS, SETTINGS_ID, type Muscle, type Settings, type WeeklySetTarget } from '../../db/types.ts';
 import { normalizeTarget } from '../../engine/index.ts';
-import { Sheet } from '../../shared/components/Sheet.tsx';
+import { ConfirmSheet, Sheet } from '../../shared/components/Sheet.tsx';
+import { targetsFromProgram } from '../../seed/settings.ts';
 import { Stepper } from '../../shared/components/Stepper.tsx';
 import ui from '../../shared/components/components.module.css';
 import styles from './settings.module.css';
@@ -13,6 +14,7 @@ const text = (t: WeeklySetTarget) => (t.min === t.max ? `${t.min}` : `${t.min}-$
 /** Weekly working sets per muscle group (§6.4), used by the home summary and the volume chart. */
 export function WeeklyTargets({ settings }: { settings: Settings | undefined }) {
   const [editing, setEditing] = useState<Muscle | null>(null);
+  const [resetting, setResetting] = useState(false);
   const targets = settings?.weeklySetTargets;
   const current = editing ? (targets?.[editing] ?? DEFAULT_TARGET) : DEFAULT_TARGET;
 
@@ -24,7 +26,10 @@ export function WeeklyTargets({ settings }: { settings: Settings | undefined }) 
   return (
     <section className={styles.section} aria-labelledby="targets-title">
       <h2 id="targets-title">Objetivos semanales</h2>
-      <p className={styles.text}>Series por semana y grupo muscular. Toca uno para cambiarlo.</p>
+      <p className={styles.text}>
+        Series por semana y grupo muscular, según lo que prevé tu programa (mínimo: series normales; máximo: con las
+        series extra). Toca uno para cambiarlo.
+      </p>
       <div className={styles.targetGrid}>
         {MUSCLES.map((m) => (
           <button key={m} type="button" className={styles.targetRow} onClick={() => setEditing(m)}>
@@ -33,6 +38,25 @@ export function WeeklyTargets({ settings }: { settings: Settings | undefined }) 
           </button>
         ))}
       </div>
+
+      <button type="button" className={styles.smallButton} onClick={() => setResetting(true)}>
+        Ajustar al programa actual
+      </button>
+      <ConfirmSheet
+        open={resetting}
+        title="¿Ajustar los objetivos al programa?"
+        message="Se recalculan a partir de las series de tus 4 sesiones (una vez por semana cada una). Los cambios que hiciste a mano se sustituyen."
+        confirmLabel="Ajustar"
+        onConfirm={() => {
+          setResetting(false);
+          void (async () => {
+            const templates = await db.sessionTemplates.toArray();
+            const exercises = await db.exercises.toArray();
+            await db.settings.update(SETTINGS_ID, { weeklySetTargets: targetsFromProgram(templates, exercises) });
+          })();
+        }}
+        onCancel={() => setResetting(false)}
+      />
 
       <Sheet open={editing !== null} onClose={() => setEditing(null)} title={editing ? `Objetivo · ${MUSCLE_LABELS[editing]}` : undefined}>
         {editing && (

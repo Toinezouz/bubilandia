@@ -14,7 +14,7 @@ import { MUSCLE_LABELS, MUSCLES, type Exercise, type TemplateItem } from '../../
 import { getActiveWorkout } from '../../db/workouts.ts';
 import { ConfirmSheet, Sheet } from '../../shared/components/Sheet.tsx';
 import { Stepper } from '../../shared/components/Stepper.tsx';
-import { formatNumber, formatSeconds, parseDecimal } from '../../shared/format.ts';
+import { formatNumber, formatRepTarget, formatSeconds, parseDecimal } from '../../shared/format.ts';
 import { ExerciseForm } from '../exercises/ExerciseForm.tsx';
 import styles from './settings.module.css';
 
@@ -66,7 +66,6 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
           const ex = exercises.get(item.exerciseId);
           if (!ex) return null;
           const timed = ex.kind === 'timed';
-          const unit = timed ? 's' : 'reps';
           const isOpen = open === item.order;
           return (
             <li key={`${item.order}-${item.exerciseId}`} className={styles.item}>
@@ -74,8 +73,8 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
                 <span className={styles.itemName}>{ex.name}</span>
                 <span className={styles.meta}>
                   {item.baseSets}
-                  {item.optionalExtraSets ? `-${item.baseSets + 1}` : ''} × {item.repMin}-{item.repMax}
-                  {timed ? ' s' : ''} · {formatSeconds(item.restSeconds)} · +{formatNumber(ex.increment)} {timed ? 's' : 'kg'}
+                  {item.optionalExtraSets ? `-${item.baseSets + 1}` : ''} × {formatRepTarget(item.repMin, item.repMax, timed)} ·{' '}
+                  {formatSeconds(item.restSeconds)} · +{formatNumber(ex.increment)} {timed ? 's' : 'kg'}
                 </span>
               </button>
 
@@ -93,22 +92,13 @@ export function ProgramScreen({ templateId, onBack }: ProgramScreenProps) {
                       onChange={(e) => update(item.order, { optionalExtraSets: e.target.checked ? 1 : 0 })}
                     />
                   </label>
-                  <Row label={`Mínimo (${unit})`}>
+                  <Row label={timed ? 'Segundos por serie' : 'Repeticiones por serie'}>
                     <Stepper
-                      label="mínimo"
+                      label={timed ? 'segundos' : 'repeticiones'}
                       value={item.repMin}
                       step={timed ? 5 : 1}
-                      min={1}
-                      onChange={(v) => v && v < item.repMax && update(item.order, { repMin: v })}
-                    />
-                  </Row>
-                  <Row label={`Máximo (${unit})`}>
-                    <Stepper
-                      label="máximo"
-                      value={item.repMax}
-                      step={timed ? 5 : 1}
-                      min={item.repMin + 1}
-                      onChange={(v) => v && update(item.order, { repMax: v })}
+                      min={timed ? 5 : 1}
+                      onChange={(v) => v && update(item.order, { repMin: v, repMax: v })}
                     />
                   </Row>
                   <Row label="Descanso (s)">

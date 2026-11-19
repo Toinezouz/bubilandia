@@ -3,8 +3,13 @@
  *
  * iOS only lets audio play after a user gesture: `unlockAudio()` must be called from a tap
  * ("Empezar sesión", and any tap in the workout screen after a reload). It is cheap to call
- * again. On iOS 17+, `navigator.audioSession.type = 'playback'` lets the beeps play even with
- * the silent switch on; on older versions the full-screen flash is the fallback signal.
+ * again.
+ *
+ * Music: she trains with Spotify (or any other app) playing. The audio session is declared
+ * 'ambient', so the beeps MIX with her music instead of stopping it. The trade-off (an iOS
+ * rule): ambient sounds follow the silent switch, so with the phone on silent the full-screen
+ * flash is the signal. Nothing is created before her first tap, so opening the app never
+ * touches the music either.
  */
 
 interface AudioSessionNavigator {
@@ -22,14 +27,19 @@ function getContext(): AudioContext | null {
   return ctx;
 }
 
-/** Call from a user gesture. Safe to call often. */
-export function unlockAudio(): void {
+/** 'ambient' = mix with the music of other apps, never interrupt it. */
+function declareAmbient(): void {
   try {
     const session = (navigator as AudioSessionNavigator).audioSession;
-    if (session && session.type !== 'playback') session.type = 'playback';
+    if (session && session.type !== 'ambient') session.type = 'ambient';
   } catch {
-    // Not supported: ignore.
+    // Not supported (iOS < 17): Web Audio is already mixed with other apps there.
   }
+}
+
+/** Call from a user gesture. Safe to call often. */
+export function unlockAudio(): void {
+  declareAmbient(); // before the AudioContext exists, so it never takes over the music
   const audio = getContext();
   if (!audio) return;
   if (audio.state !== 'running') void audio.resume();
@@ -58,6 +68,7 @@ function tone(audio: AudioContext, at: number, frequency: number, duration: numb
 
 /** 'end': three clear beeps. 'warning': one short, softer beep (10 s left). */
 export function playBeep(kind: 'end' | 'warning'): void {
+  declareAmbient();
   const audio = getContext();
   if (!audio) return;
   if (audio.state !== 'running') void audio.resume();

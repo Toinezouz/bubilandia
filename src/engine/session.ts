@@ -5,40 +5,88 @@
 
 import { estimateE1RM } from './e1rm.ts';
 import type { ExerciseKind, PerformedSet } from './types.ts';
-import { addIncrements, reduceByFraction, roundToIncrement } from './weight.ts';
+import { MAX_LOAD_CHANGE, loadFor, repsAtTarget, repsFor } from './progression.ts';
+import { addIncrements, floorToIncrement, reduceByFraction, roundToIncrement } from './weight.ts';
 
 export type Readiness = 'high' | 'normal' | 'low';
 
 // ─── After the first working set ────────────────────────────────────────────────
 
-export type InSessionAdjustment = { kind: 'increase' | 'decrease'; weight: number } | null;
+export type InSessionAdjustment = { kind: 'increase' | 'decrease'; weight: number; reps: number } | null;
 
-export const DAY_HARD_FRACTION = 0.05;
+/** A gap of this many reps (at the target RPE) between the first set and its target is a clear sign. */
+export const FORM_GAP_REPS = 2;
 
 /**
- * Compares the first working set with its target:
- * - much better (reps ≥ target and RPE ≤ 6.5) → +1 increment for the next sets;
- * - much worse (RPE ≥ 9.5 with reps < target, or reps < repMin) → −5 % for the next sets;
- * - otherwise nothing. Only for exercises with a load.
+ * "Forma del día" on the first working set: what she actually had in her (reps + reserve,
+ * read at the target RPE) against what was planned.
+ * - 2+ reps more than planned → heavier load for the next sets ("Hoy vas fuerte");
+ * - 2+ reps fewer → lighter load ("Día duro").
+ * The new load is computed from today's strength so the next set lands on its target at the
+ * target RPE (rounded down, so it is achievable), within ±12 %. Only for exercises with a load.
  */
 export function adjustAfterFirstSet(input: {
   kind: ExerciseKind;
   increment: number;
   repMin: number;
+  repMax: number;
+  targetRPE: number;
+  /** Planned reps of the first set. */
   targetReps: number;
+  /** Planned reps of the next set (to aim the new load at). */
+  nextTargetReps: number;
   firstSet: PerformedSet;
 }): InSessionAdjustment {
-  const { kind, increment, repMin, targetReps, firstSet } = input;
-  if (kind === 'timed' || firstSet.weight === null || firstSet.weight <= 0) return null;
-  const { weight, reps, rpe } = firstSet;
+  const { kind, increment, repMin, repMax, targetRPE, targetReps, firstSet } = input;
+  if (kind !== 'weighted' || firstSet.weight === null || firstSet.weight <= 0 || firstSet.reps <= 0) return null;
+  const weight = firstSet.weight;
+  const gap = repsAtTarget(firstSet, targetRPE) - targetReps;
+  const harder = gap <= -FORM_GAP_REPS;
+  const easier = gap >= FORM_GAP_REPS;
+  if (!harder && !easier) return null;
 
-  if (reps < repMin || (rpe !== null && rpe >= 9.5 && reps < targetReps)) {
-    return { kind: 'decrease', weight: reduceByFraction(weight, increment, DAY_HARD_FRACTION) };
+  const todayE1RM = estimateE1RM(weight, firstSet.reps, firstSet.rpe ?? targetRPE);
+  const aim = Math.min(repMax, Math.max(repMin, input.nextTargetReps));
+  const ideal = floorToIncrement(loadFor(todayE1RM, aim, targetRPE), increment);
+  const change = MAX_LOAD_CHANGE * weight;
+
+  if (easier) {
+    // At least one increment, at most +12 % (but one increment is always allowed, even on light loads).
+    const ceiling = Math.max(addIncrements(weight, increment, 1), floorToIncrement(weight + change, increment));
+    const load = Math.min(ceiling, Math.max(ideal, addIncrements(weight, increment, 1)));
+    if (load <= weight) return null;
+    return { kind: 'increase', weight: load, reps: Math.min(repMax, Math.max(repMin, repsFor(todayE1RM, load, targetRPE))) };
   }
-  if (rpe !== null && rpe <= 6.5 && reps >= targetReps) {
-    return { kind: 'increase', weight: addIncrements(weight, increment, 1) };
-  }
-  return null;
+  const floor = Math.min(addIncrements(weight, increment, -1), floorToIncrement(weight - change, increment));
+  const load = Math.max(floor, Math.min(ideal, addIncrements(weight, increment, -1)));
+  if (load >= weight) return null;
+  return { kind: 'decrease', weight: load, reps: Math.min(repMax, Math.max(repMin, repsFor(todayE1RM, load, targetRPE))) };
+}
+
+/**
+ * After a later set (2nd, 3rd…): fatigue check, like a coach watching the set. If she fell
+ * 2+ reps short of the next target even at failure, the next set would be a grind or a miss:
+ * propose a lighter load for the remaining sets, computed from that set so the next one lands
+ * on its target at the target RPE (nearest step, at most −12 %). Never a heavier load
+ * mid-exercise. Only for exercises with a load.
+ */
+export function adjustAfterLaterSet(input: {
+  kind: ExerciseKind;
+  increment: number;
+  targetRPE: number;
+  /** Planned reps of the next set. */
+  nextTargetReps: number;
+  set: PerformedSet;
+}): InSessionAdjustment {
+  const { kind, increment, targetRPE, nextTargetReps, set } = input;
+  if (kind !== 'weighted' || set.weight === null || set.weight <= 0 || set.reps <= 0) return null;
+  if (repsAtTarget(set, 10) > nextTargetReps - FORM_GAP_REPS) return null;
+  const weight = set.weight;
+  const e1rm = estimateE1RM(weight, set.reps, set.rpe ?? targetRPE);
+  const floor = Math.min(addIncrements(weight, increment, -1), roundToIncrement(weight * (1 - MAX_LOAD_CHANGE), increment));
+  const load = Math.max(floor, Math.min(roundToIncrement(loadFor(e1rm, nextTargetReps, targetRPE), increment), addIncrements(weight, increment, -1)));
+  if (load >= weight) return null;
+  return { kind: 'decrease', weight: load, reps: nextTargetReps };
 }
 
 // ─── Form of the day ─────────────────────────────────────────────────────────────
@@ -96,10 +144,23 @@ export function readinessLevel(score: number): Readiness {
 
 // ─── Bonus set & light session ──────────────────────────────────────────────────
 
-/** "2-3 series": the 3rd set is offered only if the last set was RPE ≤ 8 on a normal/good day. */
-export function bonusSetAllowed(input: { lastSetRpe: number | null; readiness: Readiness | null; lightSession: boolean }): boolean {
+/**
+ * "2-3 series": the bonus set is offered only when the last set was done at or below the
+ * target effort (close to failure is planned: RPE 9 is fine, a grinding 10 is not) with at
+ * least the bottom of the range, on a day whose form is not low and that is not lightened.
+ */
+export function bonusSetAllowed(input: {
+  lastSetRpe: number | null;
+  lastSetReps: number | null;
+  repMin: number;
+  targetRPE: number;
+  readiness: Readiness | null;
+  lightSession: boolean;
+}): boolean {
   if (input.lightSession || input.readiness === 'low') return false;
-  return input.lastSetRpe !== null && input.lastSetRpe <= 8;
+  if (input.lastSetRpe === null || input.lastSetReps === null) return false;
+  // One rep less on the last set is normal fatigue with a fixed number of reps.
+  return input.lastSetRpe <= input.targetRPE && input.lastSetReps >= input.repMin - 1;
 }
 
 export const LIGHT_SESSION_FRACTION = 0.1;

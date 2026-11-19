@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adjustAfterFirstSet,
+  adjustAfterLaterSet,
   bonusSetAllowed,
   lightSessionWeight,
   performanceIndex,
@@ -11,30 +12,48 @@ import {
 } from '../../src/engine/session.ts';
 
 describe('adjustAfterFirstSet (§7.5)', () => {
-  const base = { kind: 'weighted' as const, increment: 2.5, repMin: 8, targetReps: 10 };
+  // 8-12 range, target RPE 9, first set planned for 10 reps, next for 9.
+  const base = { kind: 'weighted' as const, increment: 2.5, repMin: 8, repMax: 12, targetRPE: 9, targetReps: 10, nextTargetReps: 9 };
 
-  it('much better than planned → +1 increment', () => {
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 10, rpe: 6.5 } })).toEqual({ kind: 'increase', weight: 45 });
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 12, rpe: 6 } })).toEqual({ kind: 'increase', weight: 45 });
+  it('2+ reps better than planned (at the target RPE) → heavier load computed from today', () => {
+    // 10 reps with 3 left (RPE 7) = 12 at RPE 9: e1RM 60,9 → 9 reps at RPE 9 needs 45,7 → 45 kg.
+    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 10, rpe: 7 } })).toEqual({ kind: 'increase', weight: 45, reps: 9 });
   });
 
-  it('much worse than planned → −5 %', () => {
-    // RPE ≥ 9.5 and reps under target
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 9, rpe: 9.5 } })).toEqual({ kind: 'decrease', weight: 40 });
-    // reps under repMin, whatever the RPE
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 7, rpe: 8 } })).toEqual({ kind: 'decrease', weight: 40 });
+  it('2+ reps worse than planned, or under the range → lighter load computed from today', () => {
+    // 8 reps at failure = 7 at RPE 9 (3 short): e1RM 53,8 → 9 reps at RPE 9 needs 40,4 → 40 kg.
+    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 8, rpe: 10 } })).toEqual({ kind: 'decrease', weight: 40, reps: 9 });
+    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 7, rpe: 8 } })?.kind).toBe('decrease');
   });
 
-  it('otherwise nothing changes', () => {
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 10, rpe: 8 } })).toBeNull();
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 9, rpe: 6.5 } })).toBeNull(); // easy but short of target
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 10, rpe: 9.5 } })).toBeNull(); // hard but target met
-    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 42.5, reps: 10, rpe: null } })).toBeNull();
+  it('within a rep of the plan → nothing changes (close to failure is the plan)', () => {
+    for (const set of [
+      { weight: 42.5, reps: 10, rpe: 9 },
+      { weight: 42.5, reps: 11, rpe: 9 },
+      { weight: 42.5, reps: 9, rpe: 9 },
+      { weight: 42.5, reps: 10, rpe: 10 },
+      { weight: 42.5, reps: 10, rpe: null },
+    ]) {
+      expect(adjustAfterFirstSet({ ...base, firstSet: set }), JSON.stringify(set)).toBeNull();
+    }
   });
 
-  it('does not apply to timed exercises or sets without load', () => {
+  it('first session (calibration load too light) → proposes at least one increment, even on light loads', () => {
+    // 10 reps at RPE 6 with 20 kg: 4 reps better than planned; +12 % of 20 kg is < 2,5 kg.
+    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: 20, reps: 10, rpe: 6 } })).toMatchObject({ kind: 'increase', weight: 22.5 });
+  });
+
+  it('never more than ±12 % (one increment always allowed)', () => {
+    const big = adjustAfterFirstSet({ ...base, firstSet: { weight: 100, reps: 12, rpe: 6 } });
+    expect(big).toMatchObject({ kind: 'increase', weight: 110 }); // 112 → floor 110
+    const low = adjustAfterFirstSet({ ...base, firstSet: { weight: 100, reps: 3, rpe: 10 } });
+    expect(low).toMatchObject({ kind: 'decrease', weight: 87.5 }); // 88 → floor 87,5
+  });
+
+  it('does not apply to timed or bodyweight exercises, or sets without load', () => {
     expect(adjustAfterFirstSet({ ...base, kind: 'timed', firstSet: { weight: null, reps: 20, rpe: 10 } })).toBeNull();
     expect(adjustAfterFirstSet({ ...base, kind: 'bodyweight', firstSet: { weight: null, reps: 15, rpe: 6 } })).toBeNull();
+    expect(adjustAfterFirstSet({ ...base, firstSet: { weight: null, reps: 15, rpe: 6 } })).toBeNull();
   });
 });
 
@@ -102,13 +121,24 @@ describe('form of the day', () => {
 });
 
 describe('bonusSetAllowed', () => {
-  it('only after an RPE ≤ 8 and when the form is not low', () => {
-    expect(bonusSetAllowed({ lastSetRpe: 8, readiness: 'normal', lightSession: false })).toBe(true);
-    expect(bonusSetAllowed({ lastSetRpe: 7, readiness: null, lightSession: false })).toBe(true);
-    expect(bonusSetAllowed({ lastSetRpe: 8.5, readiness: 'high', lightSession: false })).toBe(false);
-    expect(bonusSetAllowed({ lastSetRpe: 7, readiness: 'low', lightSession: false })).toBe(false);
-    expect(bonusSetAllowed({ lastSetRpe: 7, readiness: 'normal', lightSession: true })).toBe(false);
-    expect(bonusSetAllowed({ lastSetRpe: null, readiness: 'normal', lightSession: false })).toBe(false);
+  const base = { lastSetRpe: 9, lastSetReps: 10, repMin: 10, targetRPE: 9, readiness: 'normal' as const, lightSession: false };
+
+  it('offered when the last set was not harder than planned, inside the range', () => {
+    expect(bonusSetAllowed(base)).toBe(true);
+    expect(bonusSetAllowed({ ...base, lastSetRpe: 8, readiness: null })).toBe(true);
+  });
+
+  it('hidden after a grinding set, under the range, on a low day or a light session', () => {
+    expect(bonusSetAllowed({ ...base, lastSetRpe: 9.5 })).toBe(false);
+    expect(bonusSetAllowed({ ...base, lastSetReps: 9 })).toBe(true); // one rep less: normal fatigue
+    expect(bonusSetAllowed({ ...base, lastSetReps: 8 })).toBe(false);
+    expect(bonusSetAllowed({ ...base, readiness: 'low' })).toBe(false);
+    expect(bonusSetAllowed({ ...base, lightSession: true })).toBe(false);
+    expect(bonusSetAllowed({ ...base, lastSetRpe: null })).toBe(false);
+  });
+
+  it('follows her target: training to failure (target 10) still allows the bonus set', () => {
+    expect(bonusSetAllowed({ ...base, lastSetRpe: 10, targetRPE: 10 })).toBe(true);
   });
 });
 
@@ -128,5 +158,23 @@ describe('warmupSets', () => {
     expect(warmupSets(5, 2.5)).toEqual([{ weight: 2.5, reps: 10 }]); // 3,5 → 2,5 duplicate dropped
     expect(warmupSets(2.5, 2.5)).toEqual([]);
     expect(warmupSets(null, 2.5)).toEqual([]);
+  });
+});
+
+describe('adjustAfterLaterSet (fatigue between sets)', () => {
+  const base = { kind: 'weighted' as const, increment: 2.5, targetRPE: 9, nextTargetReps: 10 };
+
+  it('a later set 2+ reps short even at failure → lighter for the next set', () => {
+    // 40 kg × 8 @ 10 → e1RM 50,7 → 10 reps at RPE 9 needs 37,1 → 37,5 kg.
+    expect(adjustAfterLaterSet({ ...base, set: { weight: 40, reps: 8, rpe: 10 } })).toEqual({ kind: 'decrease', weight: 37.5, reps: 10 });
+    // Never more than −12 %.
+    expect(adjustAfterLaterSet({ ...base, set: { weight: 100, reps: 3, rpe: 10 } })?.weight).toBe(87.5);
+  });
+
+  it('normal fatigue (one rep short, or the planned effort) → nothing; never heavier', () => {
+    expect(adjustAfterLaterSet({ ...base, set: { weight: 40, reps: 9, rpe: 10 } })).toBeNull();
+    expect(adjustAfterLaterSet({ ...base, set: { weight: 40, reps: 10, rpe: 9 } })).toBeNull();
+    expect(adjustAfterLaterSet({ ...base, set: { weight: 40, reps: 10, rpe: 6 } })).toBeNull();
+    expect(adjustAfterLaterSet({ ...base, kind: 'bodyweight', set: { weight: null, reps: 5, rpe: 10 } })).toBeNull();
   });
 });

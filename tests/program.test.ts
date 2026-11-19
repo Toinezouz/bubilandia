@@ -39,11 +39,12 @@ describe('program list helpers', () => {
     ]);
     const plank = SEED_EXERCISES.find((e) => e.id === 'plank')!;
     const added = addItem(removed, plank);
-    expect(added.at(-1)).toMatchObject({ exerciseId: 'plank', order: 3, baseSets: 3, repMin: 30, repMax: 45, restSeconds: 60 });
+    expect(added.at(-1)).toMatchObject({ exerciseId: 'plank', order: 3, baseSets: 3, repMin: 30, repMax: 30, restSeconds: 60 });
   });
 
   it('keeps values sane when editing', () => {
-    expect(patchItem(legA, 0, { repMin: 12, repMax: 10 })[0]).toMatchObject({ repMin: 12, repMax: 13 });
+    expect(patchItem(legA, 0, { repMin: 12, repMax: 10 })[0]).toMatchObject({ repMin: 12, repMax: 12 });
+    expect(patchItem(legA, 0, { repMin: 10, repMax: 10 })[0]).toMatchObject({ repMin: 10, repMax: 10 }); // fixed reps
     expect(patchItem(legA, 0, { baseSets: 0 })[0]!.baseSets).toBe(1);
     expect(patchItem(legA, 0, { restSeconds: -15 })[0]!.restSeconds).toBe(0);
     expect(patchItem(legA, 0, { order: 3, baseSets: 4 })[0]).toMatchObject({ order: 0, baseSets: 4 }); // order not patchable

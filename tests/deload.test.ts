@@ -51,7 +51,9 @@ describe('deload week', () => {
     expect(view.workout.isDeload).toBe(true);
     const hip = view.exercises[0]!.sets;
     expect(hip).toHaveLength(2); // 3 → 2 sets
-    expect(hip[0]!.weight).toBe(47.5); // suggestion 52,5 → −10 % = 47,25 → 47,5
+    // Hip thrust × 8: 50 kg × 10 @ RPE 8 is 3 reps over → e1RM 70 → 8 reps at RPE 9 needs
+    // 53,8 → 52,5 kg; deload −10 % → 47,25 → 47,5 kg.
+    expect(hip[0]!.weight).toBe(47.5);
     for (const s of hip) await completeSet(db, s.id, 6, T0 + 2 * DAY);
     await finishWorkout(db, id, T0 + 2 * DAY + 3_600_000);
 
@@ -84,6 +86,7 @@ describe('return after a break', () => {
     const id = await startWorkout(db, 'pierna-a', T0 + 15 * DAY, { reduceLoads: true });
     const view = (await loadWorkoutView(db, id))!;
     expect(view.workout.isDeload).toBe(false);
+    // Normal suggestion 52,5 kg (see above) − 10 % → 47,5 kg.
     expect(view.exercises[0]!.sets.map((s) => s.weight)).toEqual([47.5, 47.5, 47.5]);
   });
 

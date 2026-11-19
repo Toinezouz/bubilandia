@@ -64,7 +64,7 @@ describe('a full session, from the home screen to the history', () => {
     await startFirstSession();
 
     // First time: no load suggested, a calibration hint instead.
-    expect(await screen.findByText(/Elige un peso con el que hagas ~8 reps/)).toBeTruthy();
+    expect(await screen.findByText('Primera vez: elige un peso con el que llegues a 8 reps cerca del fallo.')).toBeTruthy();
     expect((screen.getByLabelText('peso') as HTMLInputElement).value).toBe('');
 
     typeWeight('40');

@@ -22,9 +22,10 @@ export function removeItem(items: ReadonlyArray<TemplateItem>, order: number): T
   return renumber(items.filter((i) => i.order !== order));
 }
 
-/** New exercise at the end: 3 × 8-12 with the exercise's own rest (timed: 30-45 s). */
+/** New exercise at the end: 3 × 10 with the exercise's own rest (timed: 3 × 30 s). */
 export function addItem(items: ReadonlyArray<TemplateItem>, exercise: Exercise): TemplateItem[] {
   const timed = exercise.kind === 'timed';
+  const reps = timed ? 30 : 10;
   return renumber([
     ...items,
     {
@@ -32,8 +33,8 @@ export function addItem(items: ReadonlyArray<TemplateItem>, exercise: Exercise):
       order: items.length,
       baseSets: 3,
       optionalExtraSets: 0,
-      repMin: timed ? 30 : 8,
-      repMax: timed ? 45 : 12,
+      repMin: reps,
+      repMax: reps,
       restSeconds: exercise.defaultRestSeconds,
       targetRPE: null,
     },
@@ -48,7 +49,8 @@ export function patchItem(items: ReadonlyArray<TemplateItem>, order: number, pat
       const next = { ...item, ...patch, order: item.order };
       next.baseSets = Math.min(8, Math.max(1, Math.round(next.baseSets)));
       next.repMin = Math.max(1, Math.round(next.repMin));
-      next.repMax = Math.max(next.repMin + 1, Math.round(next.repMax));
+      // Fixed reps: repMax = repMin is allowed (and is the default program).
+      next.repMax = Math.max(next.repMin, Math.round(next.repMax));
       next.restSeconds = Math.min(600, Math.max(0, Math.round(next.restSeconds)));
       return next;
     }),

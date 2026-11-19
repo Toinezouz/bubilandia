@@ -15,9 +15,13 @@ export const RPE_LABELS: ReadonlyArray<{ rpe: Rpe; label: string }> = [
   { rpe: 6, label: '4 o más, fácil' },
 ];
 
-export const DEFAULT_TARGET_RPE = 8;
-/** Target zone: 1 to 3 reps in reserve. */
-export const TARGET_ZONE = { min: 7, max: 9 } as const;
+/**
+ * Bodybuilding, not powerlifting: sets are taken close to failure (≈ 1 rep in reserve) while
+ * staying inside the program's rep ranges. She still logs the real RPE after every set.
+ */
+export const DEFAULT_TARGET_RPE = 9;
+/** Target zone: close to failure (0 to 1 rep in reserve). */
+export const TARGET_ZONE = { min: 9, max: 10 } as const;
 
 export function rir(rpe: number): number {
   return 10 - rpe;

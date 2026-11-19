@@ -129,6 +129,8 @@ export interface PerformedExercise {
   note: string;
   /** The "Hoy vas fuerte / Día duro" question after the first set was answered. */
   formCheckAnswered?: boolean;
+  /** Last working set (0-based) after which an in-session load question was answered. */
+  promptAnsweredForSet?: number;
 }
 
 export interface SetEntry {

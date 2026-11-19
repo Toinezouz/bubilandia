@@ -11,8 +11,8 @@ import {
   updateSetValues,
   type LastPerformance,
 } from '../../db/workouts.ts';
-import { adjustAfterFirstSet, bonusSetAllowed, type Suggestion } from '../../engine/index.ts';
-import { formatKg, formatNumber, formatPerformance, formatSeconds, formatTarget } from '../../shared/format.ts';
+import { adjustAfterFirstSet, adjustAfterLaterSet, bonusSetAllowed, type Suggestion } from '../../engine/index.ts';
+import { formatKg, formatNumber, formatPerformance, formatRepTarget, formatSeconds, formatTarget } from '../../shared/format.ts';
 import { Stepper } from '../../shared/components/Stepper.tsx';
 import { ExerciseSheet } from '../exercises/ExerciseSheet.tsx';
 import styles from './workout.module.css';
@@ -33,6 +33,8 @@ interface ExerciseCardProps {
   onRemoveSet: (set: SetEntry) => void;
   readiness: Readiness | null;
   lightSession: boolean;
+  /** RPE aimed at the end of each set for this exercise. */
+  targetRPE: number;
 }
 
 export function ExerciseCard(props: ExerciseCardProps) {
@@ -51,32 +53,62 @@ export function ExerciseCard(props: ExerciseCardProps) {
   const finished = sets.length > 0 && doneCount === sets.length;
   const canSwap = doneCount === 0;
 
-  // §7.5 — after the 1st working set: "Hoy vas fuerte" / "Día duro", asked once.
+  // §7.5 — like a coach watching each set. After the 1st working set: "Hoy vas fuerte" /
+  // "Día duro" (both directions). After a later set: fatigue check (lighter only). Each
+  // question is asked once, for the last set done.
   const first = sets[0];
-  const adjustment =
-    item && first && first.completedAt !== null && first.reps !== null && firstPending && !performed.formCheckAnswered
+  const doneSets = sets.filter((s) => s.completedAt !== null && s.reps !== null);
+  const lastDoneIndex = doneSets.length - 1;
+  const answeredUpTo = performed.promptAnsweredForSet ?? (performed.formCheckAnswered ? 0 : -1);
+  const lastDone = doneSets[lastDoneIndex];
+  const nextTarget = firstPending?.suggestedReps ?? firstPending?.reps ?? null;
+  const laterAdjustment =
+    item && lastDone && lastDoneIndex >= 1 && lastDoneIndex > answeredUpTo && firstPending && nextTarget !== null
+      ? adjustAfterLaterSet({
+          kind: exercise.kind,
+          increment: exercise.increment,
+          targetRPE: props.targetRPE,
+          nextTargetReps: nextTarget,
+          set: { weight: lastDone.weight, reps: lastDone.reps!, rpe: lastDone.rpe },
+        })
+      : null;
+  const firstAdjustment =
+    item && first && first.completedAt !== null && first.reps !== null && firstPending && lastDoneIndex === 0 && answeredUpTo < 0
       ? adjustAfterFirstSet({
           kind: exercise.kind,
           increment: exercise.increment,
           repMin: item.repMin,
-          targetReps: first.suggestedReps ?? item.repMin,
+          repMax: item.repMax,
+          targetRPE: props.targetRPE,
+          targetReps: first.suggestedReps ?? first.reps,
+          nextTargetReps: firstPending.suggestedReps ?? firstPending.reps ?? first.suggestedReps ?? first.reps,
           firstSet: { weight: first.weight, reps: first.reps, rpe: first.rpe },
         })
       : null;
+  const adjustment = firstAdjustment ?? laterAdjustment;
+  const adjustmentAfterSet = firstAdjustment ? 0 : lastDoneIndex;
   const showAdjustment = adjustment !== null && !(adjustment.kind === 'increase' && props.lightSession);
 
-  // §7.5 — bonus set of "2-3 series" items: only on a good day, after an RPE ≤ 8.
+  // §7.5 — bonus set of "2-3 series" items: only on a good day, when the last set was not
+  // harder than planned.
   const bonusOffered =
     !!item &&
     item.optionalExtraSets > 0 &&
     finished &&
     sets.length === item.baseSets &&
-    bonusSetAllowed({ lastSetRpe: sets.at(-1)?.rpe ?? null, readiness: props.readiness, lightSession: props.lightSession });
+    bonusSetAllowed({
+      lastSetRpe: sets.at(-1)?.rpe ?? null,
+      lastSetReps: sets.at(-1)?.reps ?? null,
+      repMin: item.repMin,
+      targetRPE: props.targetRPE,
+      readiness: props.readiness,
+      lightSession: props.lightSession,
+    });
 
   const timed = exercise.kind === 'timed';
   const repsUnit = timed ? 's' : exercise.isUnilateral ? 'reps/lado' : 'reps';
   const rest = item?.restSeconds ?? exercise.defaultRestSeconds;
-  const range = item ? (timed ? `${item.repMin}-${item.repMax} s` : `${item.repMin}-${item.repMax}`) : '';
+  const range = item ? formatRepTarget(item.repMin, item.repMax, timed) : '';
   const target = suggestion ? formatTarget(suggestion, exercise.kind, exercise.isUnilateral) : null;
 
   return (
@@ -209,14 +241,16 @@ export function ExerciseCard(props: ExerciseCardProps) {
             <div className={adjustment.kind === 'increase' ? styles.promptGood : styles.promptHard} role="status">
               <p>
                 {adjustment.kind === 'increase'
-                  ? `Hoy vas fuerte: ¿subir a ${formatKg(adjustment.weight)}?`
-                  : `Día duro: ¿bajar a ${formatKg(adjustment.weight)}?`}
+                  ? `Hoy vas fuerte: ¿subir a ${formatKg(adjustment.weight)} × ${adjustment.reps}?`
+                  : adjustmentAfterSet === 0
+                    ? `Día duro: ¿bajar a ${formatKg(adjustment.weight)} × ${adjustment.reps}?`
+                    : `Esta serie costó mucho: ¿bajar a ${formatKg(adjustment.weight)} × ${adjustment.reps} para la siguiente?`}
               </p>
               <div className={styles.promptActions}>
-                <button type="button" className={styles.promptYes} onClick={() => void answerFormCheck(db, performed.id, adjustment.weight)}>
+                <button type="button" className={styles.promptYes} onClick={() => void answerFormCheck(db, performed.id, adjustment, adjustmentAfterSet)}>
                   Sí
                 </button>
-                <button type="button" className={styles.promptNo} onClick={() => void answerFormCheck(db, performed.id, null)}>
+                <button type="button" className={styles.promptNo} onClick={() => void answerFormCheck(db, performed.id, null, adjustmentAfterSet)}>
                   No
                 </button>
               </div>

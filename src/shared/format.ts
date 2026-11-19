@@ -91,6 +91,12 @@ export function formatVolume(kg: number): string {
   return `${Math.round(kg).toLocaleString('es-ES')} kg`;
 }
 
+/** Template target: fixed "12" / "40 s", or a range "8-12" for programs edited before 0.6. */
+export function formatRepTarget(repMin: number, repMax: number, timed: boolean): string {
+  const value = repMin === repMax ? `${repMin}` : `${repMin}-${repMax}`;
+  return timed ? `${value} s` : value;
+}
+
 /** 150 → "2:30", 75 → "1:15", 45 → "0:45". */
 export function formatSeconds(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));

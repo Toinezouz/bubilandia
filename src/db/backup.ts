@@ -4,7 +4,9 @@
  */
 
 import { COMPOUND_IDS } from '../seed/exercises.ts';
-import { SCHEMA_VERSION, TABLE_NAMES, type AppDatabase } from './database.ts';
+import { DEFAULT_TARGET_RPE } from '../engine/rpe.ts';
+import { targetsFromProgram } from '../seed/settings.ts';
+import { LEGACY_DEFAULT_TARGET_RPE, SCHEMA_VERSION, TABLE_NAMES, hasLegacyTargets, toFixedReps, type AppDatabase } from './database.ts';
 import {
   SETTINGS_ID,
   type Exercise,
@@ -166,6 +168,21 @@ export function migrateBackup(backup: BackupFile): BackupFile {
       ...tables,
       exercises: tables.exercises.map((e) => ({ ...e, isCompound: e.isCompound ?? COMPOUND_IDS.has(e.id) })),
     };
+  }
+  if (backup.schemaVersion < 3) {
+    tables = {
+      ...tables,
+      settings: tables.settings.map((s) =>
+        s.targetRPE === undefined || s.targetRPE === LEGACY_DEFAULT_TARGET_RPE ? { ...s, targetRPE: DEFAULT_TARGET_RPE } : s,
+      ),
+    };
+  }
+  if (backup.schemaVersion < 4) {
+    tables = { ...tables, sessionTemplates: tables.sessionTemplates.map((t) => ({ ...t, items: toFixedReps(t.items) })) };
+  }
+  if (backup.schemaVersion < 5) {
+    const program = targetsFromProgram(tables.sessionTemplates, tables.exercises);
+    tables = { ...tables, settings: tables.settings.map((s) => (hasLegacyTargets(s) ? { ...s, weeklySetTargets: program } : s)) };
   }
   return { ...backup, schemaVersion: SCHEMA_VERSION, tables };
 }

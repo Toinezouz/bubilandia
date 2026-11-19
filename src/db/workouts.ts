@@ -4,6 +4,7 @@
  */
 
 import {
+  DEFAULT_TARGET_RPE,
   DELOAD_SESSIONS,
   adjustRest,
   deloadSets,
@@ -55,6 +56,16 @@ export async function lastPerformance(
   exerciseId: string,
   excludeWorkoutId?: string,
 ): Promise<LastPerformance | null> {
+  return (await recentPerformances(db, exerciseId, excludeWorkoutId, 1))[0] ?? null;
+}
+
+/** The `count` most recent sessions that count for progression (see lastPerformance), newest first. */
+export async function recentPerformances(
+  db: AppDatabase,
+  exerciseId: string,
+  excludeWorkoutId: string | undefined,
+  count: number,
+): Promise<LastPerformance[]> {
   const performed = await db.performedExercises.where('exerciseId').equals(exerciseId).toArray();
   const workouts = await db.workouts.bulkGet(performed.map((p) => p.workoutId));
 
@@ -69,13 +80,15 @@ export async function lastPerformance(
     )
     .sort((a, b) => b.workout.startedAt - a.workout.startedAt);
 
+  const found: LastPerformance[] = [];
   for (const { pe, workout } of candidates) {
     const sets = (await db.sets.where('performedExerciseId').equals(pe.id).sortBy('index'))
       .filter((s) => !s.isWarmup && s.completedAt !== null && s.reps !== null && s.reps > 0)
       .map((s) => ({ weight: s.weight, reps: s.reps!, rpe: s.rpe }));
-    if (sets.length > 0) return { workout, sets };
+    if (sets.length > 0) found.push({ workout, sets });
+    if (found.length >= count) break;
   }
-  return null;
+  return found;
 }
 
 /** The engine's suggestion for one template item, from the exercise's history. */
@@ -86,15 +99,16 @@ export async function suggestionFor(
   globalTargetRPE: number,
   excludeWorkoutId?: string,
 ): Promise<{ suggestion: Suggestion; last: LastPerformance | null }> {
-  const last = await lastPerformance(db, exercise.id, excludeWorkoutId);
+  const [last, previous] = await recentPerformances(db, exercise.id, excludeWorkoutId, 2);
   const suggestion = suggestNext({
     kind: exercise.kind,
     repRange: { min: item.repMin, max: item.repMax },
     increment: exercise.increment,
     targetRPE: item.targetRPE ?? globalTargetRPE,
     lastSets: last?.sets ?? [],
+    previousSets: previous?.sets,
   });
-  return { suggestion, last };
+  return { suggestion, last: last ?? null };
 }
 
 const ALL_TABLES = (db: AppDatabase) => [
@@ -121,7 +135,7 @@ export async function startWorkout(db: AppDatabase, templateId: string, now: num
     const template = await db.sessionTemplates.get(templateId);
     if (!template) throw new Error(`Unknown template ${templateId}`);
     const settings = await db.settings.get(SETTINGS_ID);
-    const targetRPE = settings?.targetRPE ?? 8;
+    const targetRPE = settings?.targetRPE ?? DEFAULT_TARGET_RPE;
     const deload = (settings?.deloadRemaining ?? 0) > 0;
     const lighter = deload || options.reduceLoads === true;
 
@@ -217,19 +231,29 @@ export async function toggleWarmupDone(db: AppDatabase, setId: string, now: numb
 }
 
 /**
- * Answer to "Hoy vas fuerte / Día duro" (§7.5): with a load, it is applied to the remaining
- * working sets of that exercise; either way the question is not asked again.
+ * Answer to "Hoy vas fuerte / Día duro" (§7.5). "Sí": the new load goes to the remaining
+ * working sets of that exercise, with new rep targets (the next set gets `reps`, the
+ * following ones keep their planned drop). Either way the question is not asked again.
  */
-export async function answerFormCheck(db: AppDatabase, performedExerciseId: string, weight: number | null): Promise<void> {
+export async function answerFormCheck(
+  db: AppDatabase,
+  performedExerciseId: string,
+  accepted: { weight: number; reps: number } | null,
+  /** Working set (0-based) the question followed; the first set by default. */
+  afterSet = 0,
+): Promise<void> {
   await db.transaction('rw', [db.sets, db.performedExercises], async () => {
-    if (weight !== null) {
-      await db.sets
-        .where('performedExerciseId')
-        .equals(performedExerciseId)
-        .filter((s) => !s.isWarmup && s.completedAt === null)
-        .modify({ weight });
+    if (accepted !== null) {
+      const pending = (await db.sets.where('performedExerciseId').equals(performedExerciseId).sortBy('index')).filter(
+        (s) => !s.isWarmup && s.completedAt === null,
+      );
+      const base = pending[0]?.reps ?? accepted.reps;
+      for (const s of pending) {
+        const reps = Math.max(1, accepted.reps - (base - (s.reps ?? base)));
+        await db.sets.update(s.id, { weight: accepted.weight, reps, suggestedWeight: accepted.weight, suggestedReps: reps });
+      }
     }
-    await db.performedExercises.update(performedExerciseId, { formCheckAnswered: true });
+    await db.performedExercises.update(performedExerciseId, { formCheckAnswered: true, promptAnsweredForSet: afterSet });
   });
 }
 
@@ -281,7 +305,7 @@ export async function swapExercise(db: AppDatabase, performedExerciseId: string,
       db,
       exercise,
       item ?? { repMin: 8, repMax: 12, targetRPE: null },
-      settings?.targetRPE ?? 8,
+      settings?.targetRPE ?? DEFAULT_TARGET_RPE,
       pe.workoutId,
     );
     const workingCount = Math.max(1, sets.filter((s) => !s.isWarmup).length);
@@ -299,7 +323,7 @@ export async function swapExercise(db: AppDatabase, performedExerciseId: string,
         !!workout && (workout.lightSession === true || workout.isDeload || workout.reducedLoads === true),
       ),
     );
-    await db.performedExercises.update(pe.id, { exerciseId: exercise.id, formCheckAnswered: false });
+    await db.performedExercises.update(pe.id, { exerciseId: exercise.id, formCheckAnswered: false, promptAnsweredForSet: -1 });
   });
 }
 

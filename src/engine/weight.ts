@@ -45,3 +45,10 @@ export function reduceByFraction(kg: number, increment: number, fraction: number
   const oneLess = addIncrements(kg, increment, -1);
   return Math.min(rounded, oneLess);
 }
+
+/** Rounds a load DOWN to the increment (never below one increment): a computed load is then always achievable. */
+export function floorToIncrement(kg: number, increment: number): number {
+  const step = toHundredths(increment);
+  const steps = Math.floor((Math.round(kg * 1000) + 1e-6) / (step * 10));
+  return fromHundredths(Math.max(steps, 1) * step);
+}

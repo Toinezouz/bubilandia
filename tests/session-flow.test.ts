@@ -53,7 +53,7 @@ describe('form check after the first set', () => {
     await completeSet(db, first!.id, 6, T0 + 3 * DAY);
 
     const pe = (await loadWorkoutView(db, id))!.exercises[0]!.performed;
-    await answerFormCheck(db, pe.id, 45);
+    await answerFormCheck(db, pe.id, { weight: 45, reps: 8 });
     expect((await db.sets.get(first!.id))?.weight).toBe(42.5);
     expect((await db.sets.get(second!.id))?.weight).toBe(45);
     expect((await db.sets.get(third!.id))?.weight).toBe(45);
@@ -126,7 +126,8 @@ describe('warm-up', () => {
     await completeSet(db, s1!.id, 8, T0 + 3 * DAY);
     const summary = (await loadWorkoutSummary(db, id, T0 + 3 * DAY + 60_000))!;
     expect(summary.setCount).toBe(1);
-    expect(summary.volumeKg).toBe(42.5 * 6);
+    // 3 × 10 @ 40 kg RPE 8 → 42,5 kg for 8 reps at RPE 9.
+    expect(summary.volumeKg).toBe(42.5 * 8);
     await finishWorkout(db, id, T0 + 3 * DAY + 60_000);
     expect((await lastPerformance(db, 'hip-thrust'))?.sets).toHaveLength(1);
   });
@@ -141,7 +142,7 @@ describe('swapExercise ("Cambiar ejercicio")', () => {
     const ex = (await loadWorkoutView(db, id))!.exercises[1]!;
     expect(ex.exercise.name).toBe('Sentadilla búlgara');
     expect(ex.performed.templateExerciseId).toBe('single-leg-press'); // keeps the slot
-    expect(ex.item?.repMin).toBe(8); // template targets kept
+    expect(ex.item?.repMin).toBe(10); // template target kept (prensa unilateral × 10)
     expect(ex.sets).toHaveLength(3);
     expect(ex.sets[0]).toMatchObject({ weight: null, reps: 10 }); // never done: calibration
   });
@@ -235,10 +236,11 @@ describe('audit fixes (0.3.1)', () => {
     await startDeload(db);
     const deload = await startWorkout(db, 'pierna-a', T0 + 3 * DAY);
     const pe = (await loadWorkoutView(db, deload))!.exercises[1]!.performed;
-    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([90, 90]);
+    // Prensa × 10: 100 kg × 10 @ 8 → 105 kg; deload −10 % → 94,5 → 95 kg.
+    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([95, 95]);
     await swapExercise(db, pe.id, 'leg-press-45');
     await swapExercise(db, pe.id, 'seated-leg-press');
-    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([90, 90]);
+    expect((await working(deload, 1)).map((s) => s.weight)).toEqual([95, 95]);
   });
 
   it('ignores a set saved with 0 reps in the history', async () => {
@@ -249,5 +251,33 @@ describe('audit fixes (0.3.1)', () => {
     await db.sets.update(b!.id, { weight: 40, reps: 0, rpe: 8, completedAt: T0 }); // legacy bad row
     await finishWorkout(db, id, T0 + 3_600_000);
     expect((await lastPerformance(db, 'hip-thrust'))?.sets).toEqual([{ weight: 40, reps: 10, rpe: 8 }]);
+  });
+});
+
+describe('coach behaviour across sessions', () => {
+  /** Pierna A, hip thrust × 8 (fixed), all sets with the given reps and RPE. */
+  async function hipSession(at: number, weight: number, reps: number, rpe: number) {
+    const id = await startWorkout(db, 'pierna-a', at);
+    for (const s of await working(id, 0)) {
+      await updateSetValues(db, s.id, { weight, reps });
+      await completeSet(db, s.id, rpe, at);
+    }
+    await finishWorkout(db, id, at + 3_600_000);
+  }
+  const nextHip = async (at: number) => {
+    const id = await startWorkout(db, 'pierna-a', at);
+    const sets = await working(id, 0);
+    await db.workouts.update(id, { status: 'abandoned' }); // only looking at the suggestion
+    return sets[0]!.weight;
+  };
+
+  it('a bad day repeats the load; a second one in a row lowers it', async () => {
+    await hipSession(T0, 60, 8, 9); // as planned
+    await hipSession(T0 + 3 * DAY, 60, 6, 10); // bad day: 2 short at failure
+    expect(await nextHip(T0 + 6 * DAY)).toBe(60); // "repetimos el peso"
+    await hipSession(T0 + 7 * DAY, 60, 6, 10); // short again
+    const lower = await nextHip(T0 + 10 * DAY);
+    expect(lower).toBeLessThan(60);
+    expect(lower).toBeGreaterThanOrEqual(52.5); // at most −12 %
   });
 });

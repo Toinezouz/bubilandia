@@ -17,6 +17,7 @@ import {
   type WorkoutView,
 } from '../../db/workouts.ts';
 import {
+  DEFAULT_TARGET_RPE,
   READINESS_EXERCISES,
   performanceIndex,
   readinessLevel,
@@ -60,7 +61,7 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
   const guidance = useLiveQuery(async () => {
     if (!view) return undefined;
     const settings = await db.settings.get(SETTINGS_ID);
-    const targetRPE = settings?.targetRPE ?? 8;
+    const targetRPE = settings?.targetRPE ?? DEFAULT_TARGET_RPE;
     const entries = await Promise.all(
       view.exercises.map(async ({ performed, exercise, item }) => {
         const result = await suggestionFor(
@@ -177,6 +178,7 @@ export function WorkoutScreen({ workoutId, onExit, onFinish }: WorkoutScreenProp
               onRemoveSet={(set) => setPending({ kind: 'remove', set })}
               readiness={form?.readiness ?? null}
               lightSession={view.workout.lightSession === true || view.workout.isDeload}
+              targetRPE={item?.targetRPE ?? settings?.targetRPE ?? DEFAULT_TARGET_RPE}
             />
           );
         })}

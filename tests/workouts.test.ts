@@ -75,9 +75,11 @@ describe('startWorkout', () => {
     const hipThrust = (await loadWorkoutView(db, id))!.exercises[0]!;
     const working = hipThrust.sets.filter((s) => !s.isWarmup);
     expect(working.map((s) => [s.weight, s.reps])).toEqual([
-      [42.5, 6],
-      [42.5, 6],
-      [42.5, 6],
+      // 3 × 10 @ 40 kg RPE 8 = 12 reps possible at RPE 9 (top of 6-10 passed): e1RM 56 →
+      // 7 reps at RPE 9 needs 44,2 → 42,5 kg, where she can do 8 reps at RPE 9.
+      [42.5, 8],
+      [42.5, 8],
+      [42.5, 8],
     ]);
     expect(working[0]!.suggestedWeight).toBe(42.5);
     // Warm-up before the first compound exercise: ~50 % × 10, ~70 % × 5 (§6.2), listed first.
@@ -225,7 +227,8 @@ describe('lastPerformance', () => {
 
     const d = await startWorkout(db, 'superior-b', T0 + 48 * HOUR);
     const curlD = (await loadWorkoutView(db, d))!.exercises.find((e) => e.exercise.id === 'biceps-curl')!;
-    expect(curlD.sets[0]).toMatchObject({ weight: 8, reps: 13 }); // same load, +1 rep
+    // 12 reps @ RPE 8 = 13 at RPE 9, + 1 rep of progress → same load, 14 reps (10-15).
+    expect(curlD.sets[0]).toMatchObject({ weight: 8, reps: 14 });
   });
 });
 

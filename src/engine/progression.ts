@@ -1,33 +1,38 @@
 /**
- * Next-session suggestion (§7.4): double progression driven by RPE.
+ * Next-session suggestion (§7.4, revised): double progression for bodybuilding, sets taken
+ * close to failure inside the program's rep ranges.
  *
- * Input: the working sets from the last time this exercise was done (the caller excludes
- * warm-ups and deload sessions), the template rep range, the increment and the target RPE.
- * Output: today's load and rep targets, plus an optional Spanish hint for the UI.
+ * The RPE she logs after each set tells how many more reps she could have done. From the
+ * last session we know her real capacity, so we can prescribe:
+ * - the same load and one more rep than she could do at the target RPE, while she is inside
+ *   the range;
+ * - a heavier load as soon as she reaches the top of the range (whatever the RPE: training
+ *   close to failure must never block the load increase), computed from her e1RM so that
+ *   she lands in the lower part of the range at the target RPE;
+ * - a lighter load, computed the same way, when she cannot reach the bottom of the range.
+ * Rep targets always stay inside the range.
  */
 
-import { averageRpe } from './rpe.ts';
+import { estimateE1RM } from './e1rm.ts';
 import type { ExerciseKind, PerformedSet, RepRange } from './types.ts';
-import { addIncrements, reduceByFraction, toHundredths } from './weight.ts';
+import { addIncrements, floorToIncrement, roundToIncrement, toHundredths } from './weight.ts';
 
 export type ProgressionDecision =
   /** No usable history: first session is for calibration. */
   | 'calibrate'
-  /** All sets at the top of the range, RPE ≤ 9 → +1 increment. */
+  /** Top of the range reached → heavier load, back to the lower part of the range. */
   | 'increase'
-  /** All sets at the top of the range, RPE ≤ 7 → +2 increments. */
-  | 'increase_double'
-  /** In the range but not all at the top → same load, +1 rep per set. */
+  /** Inside the range → same load, one more rep than her capacity at the target RPE. */
   | 'add_rep'
-  /** All sets at the top but too hard to add load (RPE > 9) → same load, same reps. */
+  /** Inside the range, at the top already for every set → same load, same reps. */
   | 'keep'
-  /** ≥ 2 sets under the range, or RPE ≥ 9.5 with low reps → −5 %. */
+  /** Bottom of the range not reachable → lighter load. */
   | 'decrease'
-  /** Timed: all sets at the top with RPE ≤ 8.5 → range shifted by +increment seconds. */
+  /** Timed: top of the range reached → range shifted by +increment seconds. */
   | 'extend_time'
   /** Timed: the shifted range would go beyond 60 s → suggest a harder variant. */
   | 'harder_variant'
-  /** Bodyweight: all sets above the top of the range → suggest adding load. */
+  /** Bodyweight: top of the range reached → suggest adding load. */
   | 'add_load';
 
 export interface ProgressionInput {
@@ -36,9 +41,15 @@ export interface ProgressionInput {
   repRange: RepRange;
   /** kg, or seconds for timed exercises. */
   increment: number;
+  /** RPE aimed at the end of each set (9 = one rep in reserve). */
   targetRPE: number;
   /** Working sets of the last session on this exercise; empty if never done. */
   lastSets: ReadonlyArray<PerformedSet>;
+  /**
+   * Working sets of the session before (if any). Used like a coach would: a single bad
+   * session does not lower the load, a confirmed one does.
+   */
+  previousSets?: ReadonlyArray<PerformedSet>;
 }
 
 export interface Suggestion {
@@ -47,7 +58,7 @@ export interface Suggestion {
   weight: number | null;
   /** Target range shown as "Hoy: 42,5 kg × 8-10". */
   repRange: RepRange;
-  /** Per-set targets when they differ from the range (add_rep), else null. */
+  /** Per-set rep targets, always inside the range (null when only a range is known). */
   perSetReps: number[] | null;
   /** Spanish message for the UI, if any. */
   hint: string | null;
@@ -55,136 +66,327 @@ export interface Suggestion {
 
 /** Beyond this, a timed exercise should move to a harder variant. */
 export const TIMED_MAX_SECONDS = 60;
-/** Fraction removed when a load must go down. */
-export const DECREASE_FRACTION = 0.05;
+/** A computed load never jumps more than this in one session (protects against odd logs). */
+export const MAX_LOAD_CHANGE = 0.12;
+
+// ─── Capacity model ─────────────────────────────────────────────────────────────
+
+/** Reps she could have done at `targetRPE` with the same load (missing RPE = as planned). */
+export function repsAtTarget(set: PerformedSet, targetRPE: number): number {
+  return set.reps + targetRPE - (set.rpe ?? targetRPE);
+}
+
+/** Load that should give `reps` at `rpe` for this e1RM (inverse of the RPE-adjusted Epley). */
+export function loadFor(e1rm: number, reps: number, rpe: number): number {
+  return e1rm / (1 + (reps + 10 - rpe) / 30);
+}
+
+/** Reps expected at `rpe` with `load`, for this e1RM. */
+export function repsFor(e1rm: number, load: number, rpe: number): number {
+  return Math.floor(30 * (e1rm / load - 1) + 1e-9) - (10 - rpe);
+}
+
+/** Lower part of the range, where a new load should start: 6-10 → 7, 8-12 → 9, 12-20 → 14. */
+export function entryReps(range: RepRange): number {
+  return range.min + Math.round((range.max - range.min) / 4);
+}
+
+const clamp = (n: number, range: RepRange) => Math.min(range.max, Math.max(range.min, Math.round(n)));
+
+// ─── Suggestion ─────────────────────────────────────────────────────────────────
 
 export function suggestNext(input: ProgressionInput): Suggestion {
-  const { kind, repRange, increment, lastSets } = input;
+  const { kind, repRange, lastSets } = input;
+  const usable = lastSets.filter((s) => s.reps > 0);
+  if (usable.length === 0) return calibrate(kind, repRange, input.targetRPE);
+  if (isFixed(repRange)) return suggestFixed({ ...input, lastSets: usable });
+  if (kind === 'timed') return suggestTimed({ ...input, lastSets: usable });
 
-  if (lastSets.length === 0) return calibrate(kind, repRange);
-  if (kind === 'timed') return suggestTimed(input);
-
-  const weight = referenceWeight(lastSets);
-  if (kind === 'weighted' && weight === null) return calibrate(kind, repRange);
-
-  const outcome = classify(input, repRange);
-  const unloaded = weight === null; // bodyweight without added load
-
-  switch (outcome) {
-    case 'decrease':
-      return unloaded
-        ? result('decrease', null, repRange, null, 'Cuesta mucho: prueba una versión más fácil del ejercicio.')
-        : result('decrease', reduceByFraction(weight, increment, DECREASE_FRACTION), repRange, null, null);
-    case 'increase':
-    case 'increase_double': {
-      const lowRange = { min: repRange.min, max: Math.min(repRange.min + 2, repRange.max) };
-      if (unloaded) {
-        return result('add_load', increment, lowRange, null, `Ya pasas de ${repRange.max} reps: añade ${formatKg(increment)} kg.`);
-      }
-      const steps = outcome === 'increase_double' ? 2 : 1;
-      return result(outcome, addIncrements(weight, increment, steps), lowRange, null, null);
-    }
-    case 'keep':
-      return result('keep', weight, repRange, lastSets.map((s) => s.reps), null);
-    case 'add_rep':
-      return result(
-        'add_rep',
-        weight,
-        repRange,
-        lastSets.map((s) => Math.min(s.reps + 1, repRange.max)),
-        null,
-      );
-  }
+  const weight = referenceWeight(usable);
+  if (kind === 'weighted' && weight === null) return calibrate(kind, repRange, input.targetRPE);
+  // Sets done with the reference load (if the load changed mid-exercise, the others are ignored).
+  const sets = weight === null ? usable : usable.filter((s) => s.weight !== null && toHundredths(s.weight) === toHundredths(weight));
+  return weight === null || kind === 'bodyweight'
+    ? suggestBodyweight({ ...input, lastSets: sets }, weight)
+    : suggestWeighted({ ...input, lastSets: sets }, weight);
 }
 
-type Outcome = 'decrease' | 'increase' | 'increase_double' | 'keep' | 'add_rep';
+function suggestWeighted(input: ProgressionInput, weight: number): Suggestion {
+  const { repRange, increment, targetRPE, lastSets } = input;
+  const first = lastSets[0]!;
+  const capacity = repsAtTarget(first, targetRPE);
+  // Strength shown last time (best set), with a missing RPE read as "as planned".
+  const e1rm = Math.max(...lastSets.map((s) => estimateE1RM(s.weight!, s.reps, s.rpe ?? targetRPE)));
+  // Reps lost from one set to the next last time (fatigue), applied to today's targets.
+  const drops = lastSets.map((s) => Math.max(0, first.reps - s.reps));
+
+  if (first.reps >= repRange.max || capacity > repRange.max) {
+    const raw = floorToIncrement(loadFor(e1rm, entryReps(repRange), targetRPE), increment);
+    const ceiling = Math.max(addIncrements(weight, increment, 1), floorToIncrement(weight * (1 + MAX_LOAD_CHANGE), increment));
+    const load = Math.min(ceiling, Math.max(raw, addIncrements(weight, increment, 1)));
+    // The step must be doable: with the new load she must reach the bottom of the range, at
+    // worst at failure. Otherwise (big step for a light load, e.g. 2,5 kg on 25 kg) she stays
+    // at the top of the range until she is strong enough — no up-and-down from one session to
+    // the next.
+    if (repsFor(e1rm, load, 10) >= repRange.min) return targetsAtLoad('increase', load, e1rm, input, drops);
+    return result('keep', weight, repRange, drops.map((d) => clamp(repRange.max - d, repRange)), null);
+  }
+
+  // Lighter only if she could not reach the bottom of the range even at failure. Judged on
+  // capacity, not raw reps: 7 reps at RPE 7 is a set stopped early, not a load too heavy.
+  if (repsAtTarget(first, 10) < repRange.min) {
+    const raw = floorToIncrement(loadFor(e1rm, entryReps(repRange), targetRPE), increment);
+    const floor = floorToIncrement(weight * (1 - MAX_LOAD_CHANGE * 1.5), increment);
+    const load = Math.max(floor, Math.min(raw, addIncrements(weight, increment, -1)));
+    return targetsAtLoad('decrease', load, e1rm, input, drops);
+  }
+
+  // Same load: one more rep than she could do at the target RPE (progress), inside the range.
+  const perSetReps = lastSets.map((s) => clamp(repsAtTarget(s, targetRPE) + 1, repRange));
+  const progressing = perSetReps.some((r, i) => r > lastSets[i]!.reps);
+  return result(progressing ? 'add_rep' : 'keep', weight, repRange, perSetReps, null);
+}
+
+/** Targets for a new load: first set from her e1RM, next ones with last session's fatigue. */
+function targetsAtLoad(decision: 'increase' | 'decrease', load: number, e1rm: number, input: ProgressionInput, drops: number[]): Suggestion {
+  const firstTarget = clamp(repsFor(e1rm, load, input.targetRPE), input.repRange);
+  const perSetReps = drops.map((d) => clamp(firstTarget - d, input.repRange));
+  return result(decision, load, input.repRange, perSetReps, null);
+}
 
 /**
- * Shared decision table. `range` is the range the sets are judged against
- * (the template range, or the shifted one for timed exercises).
+ * Bodyweight: reps first; once she reaches the top of the range, suggest adding a small load.
+ * With an added load, the load moves one increment at a time (the e1RM model would ignore
+ * her body weight).
  */
-function classify(input: ProgressionInput, range: RepRange, maxRpeToProgress = 9): Outcome {
-  const reps = input.lastSets.map((s) => s.reps);
-  const avgRpe = averageRpe(input.lastSets.map((s) => s.rpe), input.targetRPE);
-  const avgReps = reps.reduce((a, b) => a + b, 0) / reps.length;
-  const middle = (range.min + range.max) / 2;
+function suggestBodyweight(input: ProgressionInput, weight: number | null): Suggestion {
+  const { repRange, increment, targetRPE, lastSets } = input;
+  const first = lastSets[0]!;
+  const capacity = repsAtTarget(first, targetRPE);
+  const drops = lastSets.map((s) => Math.max(0, first.reps - s.reps));
+  const lowTargets = drops.map((d) => clamp(entryReps(repRange) - d, repRange));
 
-  const setsBelowMin = reps.filter((r) => r < range.min).length;
-  if (setsBelowMin >= 2 || (avgRpe >= 9.5 && avgReps < middle)) return 'decrease';
-
-  if (reps.every((r) => r >= range.max)) {
-    if (avgRpe <= 7 && input.kind !== 'timed') return 'increase_double';
-    if (avgRpe <= maxRpeToProgress) return 'increase';
-    return 'keep';
+  if (first.reps >= repRange.max || capacity > repRange.max) {
+    if (weight === null) {
+      return result('add_load', increment, repRange, lowTargets, `Ya llegas a ${repRange.max} reps: añade ${formatKg(increment)} kg.`);
+    }
+    return result('increase', addIncrements(weight, increment, 1), repRange, lowTargets, null);
   }
-  return 'add_rep';
+  if (capacity < repRange.min) {
+    if (weight === null) {
+      return result('decrease', null, repRange, lowTargets, 'Cuesta mucho: prueba una versión más fácil del ejercicio.');
+    }
+    const lighter = toHundredths(weight) > toHundredths(increment) ? addIncrements(weight, increment, -1) : null;
+    return result('decrease', lighter, repRange, lowTargets, null);
+  }
+  const perSetReps = lastSets.map((s) => clamp(repsAtTarget(s, targetRPE) + 1, repRange));
+  const progressing = perSetReps.some((r, i) => r > lastSets[i]!.reps);
+  return result(progressing ? 'add_rep' : 'keep', weight, repRange, perSetReps, null);
 }
 
 /**
- * Timed exercises (plancha): same logic in seconds. The step is the increment (5 s).
- * The current range is the template range shifted up until her weakest set fits in it,
- * so progress made in previous sessions is kept without storing extra state.
+ * Timed exercises (plancha): same idea in seconds, the step is the increment (5 s). The
+ * current range is the template range shifted up until her weakest hold fits in it, so
+ * progress is kept without extra state. Reaching the top moves the range up, whatever the RPE.
  */
 function suggestTimed(input: ProgressionInput): Suggestion {
   const { repRange, increment: step, lastSets } = input;
-  const weakest = Math.min(...lastSets.map((s) => s.reps));
+  const holds = lastSets.map((s) => s.reps);
+  const weakest = Math.min(...holds);
   const shifts = Math.max(0, Math.ceil((weakest - repRange.max) / step));
   const current = shift(repRange, shifts, step);
 
-  switch (classify(input, current, 8.5)) {
-    case 'decrease':
-      return result('decrease', null, shift(repRange, Math.max(0, shifts - 1), step), null, null);
-    case 'increase':
-    case 'increase_double': {
-      const next = shift(repRange, shifts + 1, step);
-      if (next.max > TIMED_MAX_SECONDS) {
-        return result(
-          'harder_variant',
-          null,
-          next,
-          null,
-          `Ya aguantas más de ${TIMED_MAX_SECONDS} s: prueba una variante más difícil (p. ej. plancha con un disco en la espalda).`,
-        );
-      }
-      return result('extend_time', null, next, null, null);
-    }
-    case 'keep':
-      return result('keep', null, current, lastSets.map((s) => s.reps), null);
-    case 'add_rep':
-      return result(
-        'add_rep',
-        null,
-        current,
-        lastSets.map((s) => Math.min(s.reps + step, current.max)),
-        null,
-      );
+  if (holds.filter((h) => h < current.min).length >= 2) {
+    const back = shift(repRange, Math.max(0, shifts - 1), step);
+    return result('decrease', null, back, holds.map((h) => clamp(h, back)), null);
   }
+  if (holds.every((h) => h >= current.max)) {
+    const next = shift(repRange, shifts + 1, step);
+    const hint =
+      next.max > TIMED_MAX_SECONDS
+        ? `Ya aguantas más de ${TIMED_MAX_SECONDS} s: prueba una variante más difícil (p. ej. plancha con un disco en la espalda).`
+        : null;
+    return result(hint ? 'harder_variant' : 'extend_time', null, next, holds.map(() => next.min), hint);
+  }
+  return result('add_rep', null, current, holds.map((h) => clamp(h + step, current)), null);
+}
+
+// ─── Fixed reps ─────────────────────────────────────────────────────────────────
+
+/** Most extra reps asked over the fixed number while waiting for a big load step. */
+export const FIXED_EXTRA_REPS = 5;
+
+/** A template line with a fixed number of reps (repMin = repMax). */
+export function isFixed(range: RepRange): boolean {
+  return range.min === range.max;
 }
 
 /**
- * Values pre-filled in set row `setIndex` (0-based): the suggested load, and the per-set
- * target when there is one (extra sets reuse the last one), else the bottom of the range.
- * When calibrating, reps default to ~repMax − 2 and the load is left empty.
+ * Fixed reps (the default program): every set asks for the same number of reps R, close to
+ * failure (target RPE). Only the load moves, from what she reports on the first set:
+ * - R reps with at least one more rep in reserve than planned (e.g. RPE ≤ 8 for a target of
+ *   9), or more than R reps → heavier, computed from her e1RM so that R reps land on the
+ *   target RPE (at least one increment, at most +12 %, and only if R − 1 reps stay doable);
+ * - R reps at the planned effort, or one rep short → same load (try again: strength comes);
+ * - two reps or more short even at failure → lighter, computed the same way, but only when
+ *   it is confirmed: a clear miss (4+ reps) or a second short session in a row. A single bad
+ *   day (sleep, stress, cycle…) repeats the load instead, as a coach would.
+ * The load only goes up when the whole session held: the last set must still reach R − 1
+ * at failure (otherwise she consolidates the current load first).
+ * Timed exercises: the same idea in seconds, the hold moves by one increment (5 s).
+ */
+function suggestFixed(input: ProgressionInput): Suggestion {
+  const { kind, repRange, increment, targetRPE, lastSets } = input;
+  const reps = repRange.min;
+  const all = lastSets.map(() => reps);
+  if (kind === 'timed') return suggestFixedTimed(input);
+
+  const weight = referenceWeight(lastSets);
+  if (kind === 'weighted' && weight === null) return calibrate(kind, repRange, targetRPE);
+  const sets = weight === null ? lastSets : lastSets.filter((s) => s.weight !== null && toHundredths(s.weight) === toHundredths(weight));
+  const first = sets[0]!;
+  const atTarget = repsAtTarget(first, targetRPE);
+  const atFailure = repsAtTarget(first, 10);
+  // Above the fixed number (extra reps while waiting for a big step), progress is judged on
+  // the reps actually asked: same rule, the load goes up as soon as it is doable.
+  const easier = atTarget >= reps + 1;
+  const harder = atFailure <= reps - 2;
+  // The whole session held: even the last (most tired) set reached R − 1 at failure.
+  const last = sets[sets.length - 1]!;
+  const heldToTheEnd = repsAtTarget(last, 10) >= reps - 1;
+  // A miss is confirmed when it is large, or when the previous session at this load (or a
+  // heavier one) was already short. Otherwise it is treated as a bad day.
+  // 4+ reps short (~10 % of load) is beyond day-to-day variation: the load is really too heavy.
+  const confirmed = atFailure <= reps - 4 || previousWasShort(input.previousSets, weight, reps);
+  const badDayHint = 'La última sesión costó más de lo normal: repetimos el peso. Si vuelve a costar, lo bajamos.';
+  const consolidateHint = `La primera serie fue bien, pero las últimas cayeron: consolidamos este peso antes de subir.`;
+
+  // Bodyweight: no e1RM with an unknown body weight — one step at a time.
+  if (weight === null || kind === 'bodyweight') {
+    if (easier && !heldToTheEnd) return result('keep', weight, repRange, all, consolidateHint);
+    if (easier) {
+      if (weight === null) return result('add_load', increment, repRange, all, `Ya haces ${reps} reps con margen: añade ${formatKg(increment)} kg.`);
+      return result('increase', addIncrements(weight, increment, 1), repRange, all, null);
+    }
+    if (harder && !confirmed) return result('keep', weight, repRange, all, badDayHint);
+    if (harder) {
+      if (weight === null) return result('decrease', null, repRange, all, 'Cuesta mucho: prueba una versión más fácil del ejercicio.');
+      const lighter = toHundredths(weight) > toHundredths(increment) ? addIncrements(weight, increment, -1) : null;
+      return result('decrease', lighter, repRange, all, null);
+    }
+    return result('keep', weight, repRange, all, null);
+  }
+
+  const e1rm = Math.max(...sets.map((s) => estimateE1RM(s.weight!, s.reps, s.rpe ?? targetRPE)));
+  const ideal = floorToIncrement(loadFor(e1rm, reps, targetRPE), increment);
+  if (easier && !heldToTheEnd) return result('keep', weight, repRange, all, consolidateHint);
+  if (harder && !confirmed) return result('keep', weight, repRange, all, badDayHint);
+  if (easier) {
+    const ceiling = Math.max(addIncrements(weight, increment, 1), floorToIncrement(weight * (1 + MAX_LOAD_CHANGE), increment));
+    const load = Math.min(ceiling, Math.max(ideal, addIncrements(weight, increment, 1)));
+    // Doable if she would be at most 2 reps short at the target effort (she still reaches
+    // R − 1 at failure, so the next session keeps the load: no up-and-down). Going back to a
+    // load she just missed (session before) asks for real margin: R reps at the planned
+    // effort, not just at failure (RPE 6 means "4 or more" and is only a lower bound).
+    const missedBefore = missedLoad(input.previousSets, reps);
+    const backToMissed = missedBefore !== null && toHundredths(load) >= toHundredths(missedBefore);
+    const doable = backToMissed ? repsFor(e1rm, load, targetRPE) >= reps : repsFor(e1rm, load, targetRPE) >= reps - 2;
+    if (doable) return result('increase', load, repRange, all, null);
+    // The step is too big for this load (e.g. 1 kg on a 9 kg dumbbell = +11 %, ~4 reps):
+    // she builds a few extra reps with the same load until the next one becomes doable.
+    const extra = Math.min(reps + FIXED_EXTRA_REPS, Math.max(reps, Math.round(atTarget) + 1));
+    return result(
+      'add_rep',
+      weight,
+      repRange,
+      lastSets.map(() => extra),
+      `Subir a ${formatKg(load)} kg aún es un salto grande: haz ${extra} reps hasta poder subir (o usa un incremento más pequeño).`,
+    );
+  }
+  if (harder) {
+    // One bad session must not cost much: at most −12 % (one increment always allowed).
+    // Rounded to the nearest step (not down): with 5 kg steps, flooring 55 × 0,88 would give 45 (−18 %).
+    const floor = Math.min(addIncrements(weight, increment, -1), roundToIncrement(weight * (1 - MAX_LOAD_CHANGE), increment));
+    // Nearest step here (not down): rounding down would make it too light and bounce back up.
+    const lighter = roundToIncrement(loadFor(e1rm, reps, targetRPE), increment);
+    const load = Math.max(floor, Math.min(lighter, addIncrements(weight, increment, -1)));
+    return result('decrease', load, repRange, all, null);
+  }
+  return result('keep', weight, repRange, all, null);
+}
+
+/** Load of the previous session if she missed it (2+ reps short at failure), else null. */
+function missedLoad(previous: ReadonlyArray<PerformedSet> | undefined, reps: number): number | null {
+  if (!previous || previous.length === 0) return null;
+  const w = referenceWeight(previous);
+  if (w === null) return null;
+  const first = previous.find((s) => s.weight !== null && toHundredths(s.weight) === toHundredths(w))!;
+  return repsAtTarget(first, 10) <= reps - 2 ? w : null;
+}
+
+/**
+ * Was the previous session also short (2+ reps under R even at failure) with the same load or
+ * a heavier one? Then the current miss is not just a bad day.
+ */
+function previousWasShort(previous: ReadonlyArray<PerformedSet> | undefined, weight: number | null, reps: number): boolean {
+  if (!previous || previous.length === 0) return false;
+  const prevWeight = referenceWeight(previous);
+  if (weight !== null && (prevWeight === null || toHundredths(prevWeight) < toHundredths(weight))) return false;
+  const prevFirst =
+    prevWeight === null ? previous[0]! : previous.find((s) => s.weight !== null && toHundredths(s.weight) === toHundredths(prevWeight))!;
+  return repsAtTarget(prevFirst, 10) <= reps - 2;
+}
+
+/**
+ * Timed with a fixed hold: the last hold, rounded down to the step, is where she is; held
+ * with reserve (RPE ≤ target − 1) → one step longer; beyond 60 s → harder variant.
+ */
+function suggestFixedTimed(input: ProgressionInput): Suggestion {
+  const { repRange, increment: step, targetRPE, lastSets } = input;
+  const first = lastSets[0]!;
+  const floorHold = Math.max(step, Math.floor(first.reps / step) * step);
+  const easy = (first.rpe ?? targetRPE) <= targetRPE - 1;
+  const next = easy ? floorHold + step : floorHold;
+  const range = { min: next, max: next };
+  const all = lastSets.map(() => next);
+  if (next > TIMED_MAX_SECONDS) {
+    return result(
+      'harder_variant',
+      null,
+      { min: TIMED_MAX_SECONDS, max: TIMED_MAX_SECONDS },
+      lastSets.map(() => TIMED_MAX_SECONDS),
+      `Ya aguantas más de ${TIMED_MAX_SECONDS} s: prueba una variante más difícil (p. ej. plancha con un disco en la espalda).`,
+    );
+  }
+  if (next > repRange.min && next > first.reps) return result('extend_time', null, range, all, null);
+  if (next < repRange.min && first.reps < repRange.min) return result('decrease', null, range, all, null);
+  return result('keep', null, range, all, null);
+}
+
+/**
+ * Values pre-filled in set row `setIndex` (0-based): the suggested load and the per-set
+ * target (extra sets reuse the last one), else the middle of the range.
  */
 export function prefillForSet(s: Suggestion, setIndex: number): { weight: number | null; reps: number } {
   if (s.perSetReps && s.perSetReps.length > 0) {
     const reps = s.perSetReps[Math.min(setIndex, s.perSetReps.length - 1)]!;
     return { weight: s.weight, reps };
   }
-  if (s.decision === 'calibrate') {
-    return { weight: null, reps: Math.max(s.repRange.min, s.repRange.max - 2) };
-  }
-  return { weight: s.weight, reps: s.repRange.min };
+  return { weight: s.weight, reps: middle(s.repRange) };
 }
 
-function calibrate(kind: ExerciseKind, repRange: RepRange): Suggestion {
-  const aim = Math.max(repRange.min, repRange.max - 2);
+const middle = (range: RepRange) => Math.round((range.min + range.max) / 2);
+
+function calibrate(kind: ExerciseKind, repRange: RepRange, targetRPE: number): Suggestion {
+  const aim = middle(repRange);
+  const exact = isFixed(repRange) ? '' : '~';
+  const effort = targetRPE >= 10 ? 'hasta el fallo' : targetRPE >= 9 ? 'cerca del fallo' : 'con esfuerzo';
   const hint =
     kind === 'weighted'
-      ? `Elige un peso con el que hagas ~${aim} reps dejando 2 en reserva.`
+      ? `Primera vez: elige un peso con el que llegues a ${exact}${aim} reps ${effort}.`
       : kind === 'timed'
-        ? `Aguanta ~${aim} s dejando un margen.`
-        : `Haz ~${aim} reps dejando 2 en reserva.`;
+        ? `Primera vez: aguanta ${exact}${aim} s ${effort}.`
+        : `Primera vez: haz ${exact}${aim} reps ${effort}.`;
   return result('calibrate', null, repRange, null, hint);
 }
 
@@ -224,3 +426,4 @@ function result(
 function formatKg(kg: number): string {
   return String(kg).replace('.', ',');
 }
+

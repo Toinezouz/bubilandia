@@ -4,7 +4,7 @@ import { AppDatabase } from '../src/db/database.ts';
 import { MUSCLES, SETTINGS_ID } from '../src/db/types.ts';
 import { SEED_EXERCISES } from '../src/seed/exercises.ts';
 import { seedIfEmpty } from '../src/seed/seed.ts';
-import { SEED_TEMPLATES } from '../src/seed/templates.ts';
+import { FIXED_REPS, SEED_TEMPLATES } from '../src/seed/templates.ts';
 
 let db: AppDatabase;
 
@@ -22,9 +22,11 @@ describe('seedIfEmpty', () => {
     expect(await db.sessionTemplates.count()).toBe(4);
 
     const settings = await db.settings.get(SETTINGS_ID);
-    expect(settings?.targetRPE).toBe(8);
-    expect(settings?.weeklySetTargets.glutes).toEqual({ min: 15, max: 15 });
-    expect(settings?.weeklySetTargets.back).toEqual({ min: 8, max: 10 });
+    expect(settings?.targetRPE).toBe(9); // close to failure
+    // Weekly targets follow the program: base sets – with bonus sets.
+    expect(settings?.weeklySetTargets.glutes).toEqual({ min: 15, max: 17 });
+    expect(settings?.weeklySetTargets.back).toEqual({ min: 11, max: 12 });
+    expect(settings?.weeklySetTargets.chest).toEqual({ min: 3, max: 3 });
   });
 
   it('does nothing on later launches and keeps user edits', async () => {
@@ -80,7 +82,8 @@ describe('seed data integrity', () => {
     for (const template of SEED_TEMPLATES) {
       template.items.forEach((item, index) => {
         expect(item.order).toBe(index);
-        expect(item.repMin).toBeLessThan(item.repMax);
+        expect(item.repMin).toBe(item.repMax); // fixed reps
+        expect(item.repMin).toBeGreaterThan(0);
         expect(item.baseSets).toBeGreaterThanOrEqual(2);
       });
     }
@@ -104,13 +107,22 @@ describe('seed data integrity', () => {
     expect(summary).toEqual([['A', 4], ['B', 7], ['C', 6], ['D', 8]]);
 
     const hipThrust = SEED_TEMPLATES[0]!.items[0]!;
-    expect(hipThrust).toMatchObject({ exerciseId: 'hip-thrust', baseSets: 3, optionalExtraSets: 0, repMin: 6, repMax: 10, restSeconds: 150 });
+    // §4 sets, rest and order; reps fixed inside the original ranges (6-10 → 8).
+    expect(hipThrust).toMatchObject({ exerciseId: 'hip-thrust', baseSets: 3, optionalExtraSets: 0, repMin: 8, repMax: 8, restSeconds: 150 });
 
     const curlB = SEED_TEMPLATES[1]!.items[5]!;
     expect(curlB).toMatchObject({ exerciseId: 'biceps-curl',baseSets: 2, optionalExtraSets: 1 });
 
     const plank = SEED_TEMPLATES[3]!.items[6]!;
-    expect(plank).toMatchObject({ exerciseId: 'plank', repMin: 30, repMax: 45 });
+    expect(plank).toMatchObject({ exerciseId: 'plank', repMin: 40, repMax: 40 });
+    // Every fixed number stays inside the original range of the program.
+    for (const t of SEED_TEMPLATES) {
+      for (const i of t.items) {
+        const { from } = FIXED_REPS[i.exerciseId]!;
+        expect(i.repMin, i.exerciseId).toBeGreaterThanOrEqual(from[0]);
+        expect(i.repMin, i.exerciseId).toBeLessThanOrEqual(from[1]);
+      }
+    }
     expect(byId.get('plank')?.kind).toBe('timed');
 
     for (const id of ['single-leg-press', 'cable-kickback', 'single-arm-machine-row']) {
